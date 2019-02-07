@@ -1,0 +1,1 @@
+# hbase-snapshot-backup
