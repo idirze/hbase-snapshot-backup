@@ -13,14 +13,6 @@ import static picocli.CommandLine.Help.Visibility.ALWAYS;
 @Data
 public class CreateBackupOptions extends BackupOptions {
 
-    @CommandLine.Option(names = "-skip_tmp",
-            description = "Skip HDFS /tmp directory",
-            required = false,
-            defaultValue = "false",
-            showDefaultValue = ALWAYS)
-    private boolean skipTmp;
-
-
     @CommandLine.Option(names = "-rollout",
             description = "Number of backup to maintains",
             required = false,

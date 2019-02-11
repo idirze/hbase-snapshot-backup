@@ -3,6 +3,7 @@ package com.idirze.hbase.snapshot.backup.cli;
 
 import com.idirze.hbase.snapshot.backup.commad.BackupCommand;
 import lombok.Data;
+import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
@@ -39,6 +40,13 @@ public class BackupOptions {
             arity = "1..*",
             split = ",")
     private List<String> tables;
+
+    @CommandLine.Option(names = "-skip_tmp",
+            description = "Skip HDFS /tmp directory",
+            required = false,
+            defaultValue = "false",
+            showDefaultValue = ALWAYS)
+    private boolean skipTmp;
 
     @Option(names = "-no-checksum-verify",
             description = "Do not verify checksum, use name+length only",
@@ -77,5 +85,6 @@ public class BackupOptions {
     private Integer chmod;
 
     private String inputRootPath;
+
 
 }

@@ -22,7 +22,7 @@ public class RestoreBackup extends Configured implements BackupRestoreCommand {
     @Override
     public void execute() throws Exception {
 
-        ExportSnapshot exportSnapshot = new ExportSnapshot(backupTableId, false);
+        ExportSnapshot exportSnapshot = new ExportSnapshot(backupTableId, options.isSkipTmp());
         exportSnapshot.setConf(getConf());
         options.setInputRootPath(options.getBackupRooPath());
         options.setBackupRooPath("hdfs:///apps/hbase/data");
