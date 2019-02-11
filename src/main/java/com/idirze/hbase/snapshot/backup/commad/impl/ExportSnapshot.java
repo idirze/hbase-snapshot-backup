@@ -100,9 +100,11 @@ public class ExportSnapshot extends Configured {
     }
 
     private String backupId;
+    private boolean skipTmp;
 
-    public ExportSnapshot(String backupId) {
+    public ExportSnapshot(String backupId, boolean skipTmp) {
         this.backupId = backupId;
+        this.skipTmp = skipTmp;
     }
 
     private static class ExportMapper extends Mapper<BytesWritable, NullWritable,
@@ -894,8 +896,6 @@ public class ExportSnapshot extends Configured {
         conf.setBoolean("fs." + outputRoot.toUri().getScheme() + ".impl.disable.cache", true);
         FileSystem outputFs = FileSystem.get(outputRoot.toUri(), conf);
         log.info("---> outputFs = {}, outputRoot = {}", outputFs.getUri().toString(), outputRoot.toString());
-
-        boolean skipTmp = conf.getBoolean(CONF_SKIP_TMP, false);
 
         Path snapshotDir = SnapshotDescriptionUtils.getCompletedSnapshotDir(snapshotName, inputRoot);
         Path snapshotTmpDir = SnapshotDescriptionUtils.getWorkingSnapshotDir(targetName, outputRoot);

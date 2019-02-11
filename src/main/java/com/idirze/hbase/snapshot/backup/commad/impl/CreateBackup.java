@@ -1,6 +1,7 @@
 package com.idirze.hbase.snapshot.backup.commad.impl;
 
 import com.idirze.hbase.snapshot.backup.cli.BackupOptions;
+import com.idirze.hbase.snapshot.backup.cli.CreateBackupOptions;
 import com.idirze.hbase.snapshot.backup.commad.BackupCommand;
 import com.idirze.hbase.snapshot.backup.commad.BackupRestoreCommand;
 import com.idirze.hbase.snapshot.backup.commad.BackupStatus;
@@ -19,10 +20,10 @@ public class CreateBackup extends Configured implements BackupRestoreCommand {
     private String backupId;
     private String tableSnapshotId;
     private BackupManifests backupManifest;
-    private BackupOptions options;
+    private CreateBackupOptions options;
 
 
-    public CreateBackup(Configuration conf, String tableName, String backupId, BackupManifests backupManifest, BackupOptions options) {
+    public CreateBackup(Configuration conf, String tableName, String backupId, BackupManifests backupManifest, CreateBackupOptions options) {
         setConf(conf);
         this.tableName = tableName;
         this.backupId = backupId;
@@ -37,7 +38,7 @@ public class CreateBackup extends Configured implements BackupRestoreCommand {
     public void execute() throws Exception {
 
         log.info("Export the snapshot: {} for table: {}", tableSnapshotId, tableName);
-        ExportSnapshot exportSnapshot = new ExportSnapshot(tableSnapshotId);
+        ExportSnapshot exportSnapshot = new ExportSnapshot(tableSnapshotId, options.isSkipTmp());
         exportSnapshot.setConf(getConf());
         options.setInputRootPath("hdfs:///apps/hbase/data");
         //options.setInputRootPath(FSUtils.getRootDir(getConf()).toUri().getPath());

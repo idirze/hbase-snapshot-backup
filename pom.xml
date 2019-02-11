@@ -15,7 +15,6 @@
         <junit.version>4.11</junit.version>
         <commons.lang3.version>3.2.1</commons.lang3.version>
         <commons.collections.version>3.2.1</commons.collections.version>
-
         <hdp.version>2.6.5.99-1</hdp.version>
         <hbase.version>1.1.2</hbase.version>
         <hadoop.client.version>2.7.3</hadoop.client.version>
@@ -151,43 +150,45 @@
                 </configuration>
             </plugin>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>2.3</version>
-                <configuration>
-                    <createDependencyReducedPom>false</createDependencyReducedPom>
-                </configuration>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <filters>
-                                <filter>
-                                    <artifact>*:*</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.SF</exclude>
-                                        <exclude>META-INF/*.DSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
-                            <transformers>
-                                <transformer
-                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <!-- <mainClass>com.idirze.hbase.example.SnapshotInfoDesc</mainClass>-->
-                                    <mainClass>com.idirze.hbase.snapshot.backup.HbaseBackupRestore</mainClass>
-                                </transformer>
-                               <!-- <transformer
-                                        implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>-->
-                            </transformers>
+                  <groupId>org.apache.maven.plugins</groupId>
+                  <artifactId>maven-shade-plugin</artifactId>
+                  <version>2.3</version>
+                  <configuration>
+                      <createDependencyReducedPom>false</createDependencyReducedPom>
+                  </configuration>
+                  <executions>
+                      <execution>
+                          <phase>package</phase>
+                          <goals>
+                              <goal>shade</goal>
+                          </goals>
+                          <configuration>
+                              <artifactSet>
+                                  <includes>
+                                      <include>info.picocli:picocli</include>
+                                  </includes>
+                              </artifactSet>
+                              <filters>
+                                  <filter>
+                                      <artifact>*:*</artifact>
+                                      <excludes>
+                                          <exclude>META-INF/*.SF</exclude>
+                                          <exclude>META-INF/*.DSA</exclude>
+                                          <exclude>META-INF/*.RSA</exclude>
+                                      </excludes>
+                                  </filter>
+                              </filters>
+                              <transformers>
+                                  <transformer
+                                          implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
 
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+                                      <mainClass>com.idirze.hbase.snapshot.backup.HbaseBackupRestore</mainClass>
+                                  </transformer>
+                               </transformers>
+                          </configuration>
+                      </execution>
+                  </executions>
+              </plugin>
         </plugins>
     </build>
 </project>

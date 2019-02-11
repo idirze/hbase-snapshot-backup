@@ -39,18 +39,19 @@ public class BackupRestoreCommandImpl extends Configured implements Tool {
         switch (BackupCommand.backupCommandOf(command)) {
             case CREATE:
 
-                BackupOptions backupOpts = parseArgs(new CreateBackupOptions(), args);
+                CreateBackupOptions backupOpts = parseArgs(new CreateBackupOptions(), args);
                 String backupId = BACKUPID_PREFIX + EnvironmentEdgeManager.currentTime();
 
                 backupManifestPath = FileUtils.path(backupOpts.getBackupRooPath(), BackupManifest.BACKUP_MANIFEST_NAME);
 
                 backupManifest = BackupManifests.readFrom(getConf(), backupManifestPath);
 
-                log.info("Performing backup for namespaces: {}", backupOpts.getNamespaces());
                 List<TableName> tableNames = null;
                 if (backupOpts.getNamespaces() != null && !backupOpts.getNamespaces().isEmpty()) {
+                    log.info("Performing backup for namespaces: {}", backupOpts.getNamespaces());
                     tableNames = SnapshotBackupUtils.listTableNamesByNamespaces(getConf(), backupOpts.getNamespaces());
                 } else if (backupOpts.getTables() != null && !backupOpts.getTables().isEmpty()) {
+                    log.info("Performing backup for tables: {}", backupOpts.getNamespaces());
                     tableNames = SnapshotBackupUtils.listTableNames(getConf(), backupOpts.getTables());
                 } else {
                     log.error("-namespaces or -table should be provided");
@@ -66,11 +67,11 @@ public class BackupRestoreCommandImpl extends Configured implements Tool {
                             .addStage(new DeleteSnapshot(getConf(), tableName.getNameAsString(), backupId));
                 }
 
-                if (((CreateBackupOptions) backupOpts).getRollout() != -1) {
+                if (backupOpts.getRollout() != -1) {
                     RolloutBackupOptions rolloutOpts = new RolloutBackupOptions();
                     rolloutOpts.setBackupRooPath(backupOpts.getBackupRooPath());
                     rolloutOpts.setCommand(BackupCommand.ROLLOUT);
-                    rolloutOpts.setNbBackups(((CreateBackupOptions) backupOpts).getRollout());
+                    rolloutOpts.setNbBackups(backupOpts.getRollout());
 
                     pipeline.addStage(new RollOutBackup(getConf(), backupManifest, rolloutOpts));
                 }

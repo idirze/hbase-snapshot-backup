@@ -15,11 +15,12 @@ public class HbaseBackupRestore {
 
         final Configuration conf = HBaseConfiguration.create();
 
-        conf.set("fs.hdfs.impl", org.apache.hadoop.hdfs.DistributedFileSystem.class.getName());
+       /* conf.set("fs.hdfs.impl", org.apache.hadoop.hdfs.DistributedFileSystem.class.getName());
         conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
 
         conf.addResource(new Path("/usr/hdp/current/hadoop-client/conf/core-site.xml"));
         conf.addResource(new Path("/usr/hdp/current/hbase-client/conf/hbase-site.xml"));
+*/
 
         System.exit(ToolRunner.run(conf, new BackupRestoreCommandImpl(conf), args));
 
