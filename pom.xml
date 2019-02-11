@@ -15,7 +15,7 @@
         <junit.version>4.11</junit.version>
         <commons.lang3.version>3.2.1</commons.lang3.version>
         <commons.collections.version>3.2.1</commons.collections.version>
-        <hdp.version>2.6.5.99-1</hdp.version>
+        <hdp.version>2.6.5.0-292</hdp.version>
         <hbase.version>1.1.2</hbase.version>
         <hadoop.client.version>2.7.3</hadoop.client.version>
         <jackson.version>2.9.8</jackson.version>

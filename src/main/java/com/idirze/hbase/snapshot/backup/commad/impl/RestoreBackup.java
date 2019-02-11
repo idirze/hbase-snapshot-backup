@@ -6,6 +6,9 @@ import com.idirze.hbase.snapshot.backup.utils.SnapshotBackupUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
+import org.apache.hadoop.hbase.util.FSUtils;
+
+import java.net.URI;
 
 @Slf4j
 public class RestoreBackup extends Configured implements BackupRestoreCommand {
@@ -16,7 +19,7 @@ public class RestoreBackup extends Configured implements BackupRestoreCommand {
     public RestoreBackup(Configuration conf, String tableName, String backupId, RestoreBackupOptions options) {
         super(conf);
         this.options = options;
-        this.backupTableId =  SnapshotBackupUtils.tableSnapshotId(backupId, tableName);
+        this.backupTableId = SnapshotBackupUtils.tableSnapshotId(backupId, tableName);
     }
 
     @Override
@@ -25,10 +28,11 @@ public class RestoreBackup extends Configured implements BackupRestoreCommand {
         ExportSnapshot exportSnapshot = new ExportSnapshot(backupTableId, options.isSkipTmp());
         exportSnapshot.setConf(getConf());
         options.setInputRootPath(options.getBackupRooPath());
-        options.setBackupRooPath("hdfs:///apps/hbase/data");
-        exportSnapshot.execute(options);
+        // options.setBackupRooPath("hdfs:///apps/hbase/data");
+        URI hbaseUri = FSUtils.getRootDir(getConf()).toUri();
+        options.setBackupRooPath(hbaseUri.getScheme() + "://" + hbaseUri.getPath());
 
-         exportSnapshot.execute(options);
+        exportSnapshot.execute(options);
     }
 
     @Override

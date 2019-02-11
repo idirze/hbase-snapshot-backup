@@ -1,17 +1,20 @@
 package com.idirze.hbase.snapshot.backup.commad.impl;
 
-import com.idirze.hbase.snapshot.backup.cli.BackupOptions;
 import com.idirze.hbase.snapshot.backup.cli.CreateBackupOptions;
 import com.idirze.hbase.snapshot.backup.commad.BackupCommand;
 import com.idirze.hbase.snapshot.backup.commad.BackupRestoreCommand;
 import com.idirze.hbase.snapshot.backup.commad.BackupStatus;
 import com.idirze.hbase.snapshot.backup.manifest.BackupManifest;
 import com.idirze.hbase.snapshot.backup.manifest.BackupManifests;
+import com.idirze.hbase.snapshot.backup.utils.FileUtils;
 import com.idirze.hbase.snapshot.backup.utils.SnapshotBackupUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
+import org.apache.hadoop.hbase.util.FSUtils;
 import org.joda.time.DateTime;
+
+import java.net.URI;
 
 @Slf4j
 public class CreateBackup extends Configured implements BackupRestoreCommand {
@@ -40,8 +43,10 @@ public class CreateBackup extends Configured implements BackupRestoreCommand {
         log.info("Export the snapshot: {} for table: {}", tableSnapshotId, tableName);
         ExportSnapshot exportSnapshot = new ExportSnapshot(tableSnapshotId, options.isSkipTmp());
         exportSnapshot.setConf(getConf());
-        options.setInputRootPath("hdfs:///apps/hbase/data");
-        //options.setInputRootPath(FSUtils.getRootDir(getConf()).toUri().getPath());
+        // options.setInputRootPath("hdfs:///apps/hbase/data");
+        URI hbaseUri = FSUtils.getRootDir(getConf()).toUri();
+        options.setInputRootPath(hbaseUri.getScheme() + "://" + hbaseUri.getPath());
+
         exportSnapshot.execute(options);
 
         backupManifest

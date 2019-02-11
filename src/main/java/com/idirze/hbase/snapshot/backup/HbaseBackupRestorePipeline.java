@@ -26,7 +26,7 @@ public class HbaseBackupRestorePipeline {
                 } catch (Exception e1) {
                     log.error("Failed to rollback ");
                 }
-                return 1;
+                return -1;
             }
         }
         return 0;
