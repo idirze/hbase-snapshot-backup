@@ -85,6 +85,7 @@ public class BackupOptions {
     private Integer chmod;
 
     private String inputRootPath;
+    private String outputRootPath;
 
 
 }

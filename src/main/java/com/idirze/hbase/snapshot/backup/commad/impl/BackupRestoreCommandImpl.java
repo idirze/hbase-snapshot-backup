@@ -67,13 +67,13 @@ public class BackupRestoreCommandImpl extends Configured implements Tool {
                             .addStage(new DeleteSnapshot(getConf(), tableName.getNameAsString(), backupId));
                 }
 
-                if (backupOpts.getRollout() != -1) {
-                    RolloutBackupOptions rolloutOpts = new RolloutBackupOptions();
-                    rolloutOpts.setBackupRooPath(backupOpts.getBackupRooPath());
-                    rolloutOpts.setCommand(BackupCommand.ROLLOUT);
-                    rolloutOpts.setNbBackups(backupOpts.getRollout());
+                if (backupOpts.getRollup() != -1) {
+                    RollupBackupOptions rollupOpts = new RollupBackupOptions();
+                    rollupOpts.setBackupRooPath(backupOpts.getBackupRooPath());
+                    rollupOpts.setCommand(BackupCommand.ROLLUP);
+                    rollupOpts.setNbBackups(backupOpts.getRollup());
 
-                    pipeline.addStage(new RollOutBackup(getConf(), backupManifest, rolloutOpts));
+                    pipeline.addStage(new RollupBackup(getConf(), backupManifest, rollupOpts));
                 }
 
                 break;
@@ -82,6 +82,7 @@ public class BackupRestoreCommandImpl extends Configured implements Tool {
 
                 RestoreBackupOptions restoreOpts = parseArgs(new RestoreBackupOptions(), args);
                 backupManifestPath = FileUtils.path(restoreOpts.getBackupRooPath(), BackupManifest.BACKUP_MANIFEST_NAME);
+
 
                 backupManifest = BackupManifests.readFrom(getConf(), backupManifestPath);
                 Set<String> tables = backupManifest
@@ -113,12 +114,12 @@ public class BackupRestoreCommandImpl extends Configured implements Tool {
                 pipeline.addStage(new HistoryBackup(getConf(), historyOpts));
                 break;
 
-            case ROLLOUT:
-                RolloutBackupOptions rolloutBackupOpts = parseArgs(new RolloutBackupOptions(), args);
-                backupManifestPath = FileUtils.path(rolloutBackupOpts.getBackupRooPath(), BackupManifest.BACKUP_MANIFEST_NAME);
+            case ROLLUP:
+                RollupBackupOptions rollupBackupOpts = parseArgs(new RollupBackupOptions(), args);
+                backupManifestPath = FileUtils.path(rollupBackupOpts.getBackupRooPath(), BackupManifest.BACKUP_MANIFEST_NAME);
                 backupManifest = BackupManifests
                         .readFrom(getConf(), backupManifestPath);
-                pipeline.addStage(new RollOutBackup(getConf(), backupManifest, rolloutBackupOpts));
+                pipeline.addStage(new RollupBackup(getConf(), backupManifest, rollupBackupOpts));
                 break;
 
             default:

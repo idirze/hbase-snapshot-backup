@@ -7,12 +7,12 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
-@Command(name = "rollout",
+@Command(name = "rollup",
         mixinStandardHelpOptions = true,
         description = "Roll out a backup",
         showDefaultValues = true)
 @Data
-public class RolloutBackupOptions  {
+public class RollupBackupOptions {
 
     @Parameters( index = "0",
             hidden = true)
@@ -28,8 +28,8 @@ public class RolloutBackupOptions  {
             required = true)
     private String backupRooPath;
 
-    @Option(names = "-roll_out_dir",
+    @Option(names = "-roll_up_dir",
             description = "The directory where to save the rolled out files",
             required = false)
-    private String rolloutDir;
+    private String rollupDir;
 }

@@ -7,6 +7,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HRegionInfo;
+import org.apache.hadoop.hbase.NamespaceDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
@@ -16,6 +17,7 @@ import org.apache.hadoop.hbase.protobuf.generated.SnapshotProtos;
 import org.apache.hadoop.hbase.protobuf.generated.SnapshotProtos.SnapshotFileInfo.Type;
 import org.apache.hadoop.hbase.snapshot.SnapshotDescriptionUtils;
 import org.apache.hadoop.hbase.snapshot.SnapshotReferenceUtil;
+import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Triple;
 
 import java.io.IOException;
@@ -27,6 +29,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class SnapshotBackupUtils {
 
+    private final static long TABLE_AVAILABILITY_WAIT_TIME = 180000;
 
     public static String tableSnapshotId(String backupId, String tableName) {
 
@@ -162,13 +165,13 @@ public class SnapshotBackupUtils {
         Admin admin = null;
         try {
             connection = ConnectionFactory.createConnection(conf);
-
-            TableName tableName = connection
-                    .getTable(TableName.valueOf(table))
-                    .getName();
-
             admin = connection.getAdmin();
-            admin.enableTable(tableName);
+            TableName tableName = TableName.valueOf(table);
+            if (admin.tableExists(tableName)
+                    && admin.isTableDisabled(tableName)) {
+                admin.enableTable(tableName);
+                checkAvailable(conf, table);
+            }
         } finally {
             if (admin != null) {
                 admin.close();
@@ -185,13 +188,12 @@ public class SnapshotBackupUtils {
         Admin admin = null;
         try {
             connection = ConnectionFactory.createConnection(conf);
-
-            TableName tableName = connection
-                    .getTable(TableName.valueOf(table))
-                    .getName();
-
             admin = connection.getAdmin();
-            admin.disableTable(tableName);
+            TableName tableName = TableName.valueOf(table);
+            if (admin.tableExists(tableName)
+                    && admin.isTableEnabled(tableName)) {
+                admin.disableTable(tableName);
+            }
         } finally {
             if (admin != null) {
                 admin.close();
@@ -253,4 +255,63 @@ public class SnapshotBackupUtils {
         }
     }
 
+
+    public static boolean checkAvailable(Configuration conf,
+                                         String table) throws Exception {
+
+        Connection connection = null;
+        Admin admin = null;
+
+        try {
+
+            connection = ConnectionFactory.createConnection(conf);
+            admin = connection.getAdmin();
+
+            long startTime = EnvironmentEdgeManager.currentTime();
+            while (!admin.isTableAvailable(TableName.valueOf(table))) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+                if (EnvironmentEdgeManager.currentTime() - startTime > TABLE_AVAILABILITY_WAIT_TIME) {
+                    throw new IOException("Time out " + TABLE_AVAILABILITY_WAIT_TIME + "ms expired, table "
+                            + table + " is still not available");
+                }
+            }
+        } finally {
+            if (admin != null) {
+                admin.close();
+            }
+            if (connection != null) {
+                connection.close();
+            }
+        }
+
+        return true;
+
+    }
+
+
+    public static void createNamespaceIfNotExistsForTable(Configuration conf, final String table) throws IOException {
+
+        try (Connection conn = ConnectionFactory.createConnection(conf);
+             Admin admin = conn.getAdmin()) {
+
+            String namespaceName = TableName.valueOf(table).getNamespaceAsString();
+            NamespaceDescriptor ns = NamespaceDescriptor.create(namespaceName).build();
+            NamespaceDescriptor[] list = admin.listNamespaceDescriptors();
+            boolean exists = false;
+            for (NamespaceDescriptor nsd : list) {
+                if (nsd.getName().equals(ns.getName())) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                log.info("Creating namespace: " + ns);
+                admin.createNamespace(ns);
+            }
+        }
+    }
 }

@@ -8,7 +8,7 @@ import picocli.CommandLine.Command;
                 CreateBackupOptions.class,
                 RestoreBackupOptions.class,
                 HistoryBackupOptions.class,
-                RolloutBackupOptions.class
+                RollupBackupOptions.class
         })
 public class MainCmdsOptions {
 }

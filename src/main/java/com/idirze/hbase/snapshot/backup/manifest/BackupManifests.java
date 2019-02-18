@@ -33,6 +33,13 @@ public class BackupManifests {
         return this;
     }
 
+    public Optional<BackupManifest> findByTable(String backupId) {
+        return manifests
+                .stream()
+                .filter(m -> m.getBackupId() != null && m.getBackupId().equals(backupId))
+                .findFirst();
+    }
+
     public static BackupManifests readFrom(Configuration conf, String path) throws IOException {
         setPath(conf, path);
         String json;
@@ -92,8 +99,8 @@ public class BackupManifests {
         writeTo(configuration, manifestPath);
     }
 
-    public Pair<List<BackupManifest>, List<BackupManifest>> rollout(Integer n) {
-        Integer nbLast =  checkCondition(n);
+    public Pair<List<BackupManifest>, List<BackupManifest>> rollup(Integer n) {
+        Integer nbLast = checkCondition(n);
         return new Pair<>(new ArrayList<>(manifests).subList(0, manifests.size() - nbLast),
                 new ArrayList<>(manifests).subList(manifests.size() - nbLast, manifests.size()));
     }

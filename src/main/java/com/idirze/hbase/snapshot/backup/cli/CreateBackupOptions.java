@@ -13,11 +13,11 @@ import static picocli.CommandLine.Help.Visibility.ALWAYS;
 @Data
 public class CreateBackupOptions extends BackupOptions {
 
-    @CommandLine.Option(names = "-rollout",
+    @CommandLine.Option(names = "-rollup",
             description = "Number of backup to maintains",
             required = false,
             defaultValue = "-1")
-    private int rollout;
+    private int rollup;
 
 
 }

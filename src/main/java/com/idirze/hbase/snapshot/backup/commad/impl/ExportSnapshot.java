@@ -879,15 +879,15 @@ public class ExportSnapshot extends Configured {
         boolean overwrite = true;
         String filesGroup = options.getChgroup();
         String filesUser = options.getChuser();
-        Path outputRoot = new Path(options.getBackupRooPath());
         int bandwidthMB = options.getBandwidth();
         int filesMode = options.getChmod();
         int mappers = options.getMappers();
 
         Configuration conf = getConf();
         // Path inputRoot = FSUtils.getRootDir(conf);
+        Path outputRoot = new Path(options.getOutputRootPath());
         Path inputRoot = new Path(options.getInputRootPath());
-        FSUtils.setRootDir(conf, inputRoot);
+       // FSUtils.setRootDir(conf, inputRoot);
 
         conf.setBoolean("fs." + inputRoot.toUri().getScheme() + ".impl.disable.cache", true);
         FileSystem inputFs = FileSystem.get(inputRoot.toUri(), conf);

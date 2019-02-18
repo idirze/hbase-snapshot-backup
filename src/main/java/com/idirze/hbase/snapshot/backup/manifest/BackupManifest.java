@@ -60,13 +60,14 @@ public class BackupManifest {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        BackupManifest manifest = (BackupManifest) o;
-        return Objects.equals(backupId, manifest.backupId);
+        BackupManifest that = (BackupManifest) o;
+        return Objects.equals(backupId, that.backupId) &&
+                Objects.equals(tables, that.tables);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(backupId);
+        return Objects.hash(backupId, tables);
     }
 
     @Override

@@ -8,7 +8,7 @@ public enum BackupCommand {
     RESTORE,
     DELETE,
     HISTORY,
-    ROLLOUT,
+    ROLLUP,
     HELP;
 
     public static BackupCommand backupCommandOf(String cmd) {

@@ -1,7 +1,7 @@
 package com.idirze.hbase.snapshot.backup.commad.impl;
 
 import com.google.common.collect.Sets;
-import com.idirze.hbase.snapshot.backup.cli.RolloutBackupOptions;
+import com.idirze.hbase.snapshot.backup.cli.RollupBackupOptions;
 import com.idirze.hbase.snapshot.backup.commad.BackupRestoreCommand;
 import com.idirze.hbase.snapshot.backup.manifest.BackupManifest;
 import com.idirze.hbase.snapshot.backup.manifest.BackupManifests;
@@ -23,18 +23,18 @@ import java.util.List;
 import java.util.Set;
 
 import static com.google.common.collect.Sets.difference;
-import static com.idirze.hbase.snapshot.backup.commad.BackupCommand.ROLLOUT;
+import static com.idirze.hbase.snapshot.backup.commad.BackupCommand.ROLLUP;
 import static com.idirze.hbase.snapshot.backup.commad.BackupStatus.FAILED;
 import static com.idirze.hbase.snapshot.backup.utils.FileUtils.path;
 
 
 @Slf4j
-public class RollOutBackup extends Configured implements BackupRestoreCommand {
+public class RollupBackup extends Configured implements BackupRestoreCommand {
 
     private BackupManifests backupManifest;
-    private RolloutBackupOptions options;
+    private RollupBackupOptions options;
 
-    public RollOutBackup(Configuration conf, BackupManifests backupManifest, RolloutBackupOptions options) {
+    public RollupBackup(Configuration conf, BackupManifests backupManifest, RollupBackupOptions options) {
         super(conf);
         this.options = options;
         this.backupManifest = backupManifest;
@@ -46,7 +46,7 @@ public class RollOutBackup extends Configured implements BackupRestoreCommand {
         log.info("Roll out backups");
 
 
-        Pair<List<BackupManifest>, List<BackupManifest>> pair = backupManifest.rollout(options.getNbBackups());
+        Pair<List<BackupManifest>, List<BackupManifest>> pair = backupManifest.rollup(options.getNbBackups());
 
         Set<String> removeSnapshotFiles = getSnapshotFiles(pair.getFirst());
         Set<String> keepSnapshotFiles = getSnapshotFiles(pair.getSecond());
@@ -81,7 +81,7 @@ public class RollOutBackup extends Configured implements BackupRestoreCommand {
                 .getManifests()
                 .stream()
                 .forEach(bm -> bm
-                        .withCommand(ROLLOUT)
+                        .withCommand(ROLLUP)
                         .withBackupStatus(FAILED));
         backupManifest.write();
     }

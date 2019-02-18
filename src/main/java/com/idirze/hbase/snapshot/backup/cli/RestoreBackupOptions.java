@@ -16,4 +16,10 @@ public class RestoreBackupOptions extends BackupOptions {
             description = "The id identifying the backup image",
             required = true)
     private String backupId;
+
+
+    @Option(names = "-restore_root_path",
+            description = "The full root path to restore the backup image: hdfs://nameNode:port/apps/hbase/data",
+            required = false)
+    private String restoreRooPath;
 }

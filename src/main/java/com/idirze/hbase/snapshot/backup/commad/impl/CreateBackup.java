@@ -6,7 +6,6 @@ import com.idirze.hbase.snapshot.backup.commad.BackupRestoreCommand;
 import com.idirze.hbase.snapshot.backup.commad.BackupStatus;
 import com.idirze.hbase.snapshot.backup.manifest.BackupManifest;
 import com.idirze.hbase.snapshot.backup.manifest.BackupManifests;
-import com.idirze.hbase.snapshot.backup.utils.FileUtils;
 import com.idirze.hbase.snapshot.backup.utils.SnapshotBackupUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.conf.Configuration;
@@ -46,17 +45,22 @@ public class CreateBackup extends Configured implements BackupRestoreCommand {
         // options.setInputRootPath("hdfs:///apps/hbase/data");
         URI hbaseUri = FSUtils.getRootDir(getConf()).toUri();
         options.setInputRootPath(hbaseUri.getScheme() + "://" + hbaseUri.getPath());
+        options.setOutputRootPath(options.getBackupRooPath());
 
         exportSnapshot.execute(options);
 
-        backupManifest
-                .add(new BackupManifest()
+        BackupManifest bm = backupManifest.findByTable(backupId)
+                .orElse(new BackupManifest()
                         .withBackupId(backupId)
                         .withDate(DateTime.now())
                         .withCommand(BackupCommand.CREATE)
                         .withBackupRootDir(options.getBackupRooPath())
-                        .withBackupStatus(BackupStatus.SUCCESS)
-                        .addTable(tableName))
+                        .withBackupStatus(BackupStatus.SUCCESS));
+
+        bm.addTable(tableName);
+
+        backupManifest
+                .add(bm)
                 .write();
     }
 
