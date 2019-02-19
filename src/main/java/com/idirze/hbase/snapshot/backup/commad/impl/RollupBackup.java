@@ -54,16 +54,22 @@ public class RollupBackup extends Configured implements BackupRestoreCommand {
         Sets.SetView<String> diff = difference(removeSnapshotFiles, keepSnapshotFiles);
 
         diff.stream()
-                .map(p -> new File(new Path(p).toUri().getPath()))
-                .forEach(f -> {
-                    if (f.exists()) {
-                        log.info("Removing file: {}", f.getPath());
-                        try {
-                            FileUtils.forceDelete(f);
-                        } catch (IOException e) {
-                            FileUtils.deleteQuietly(f);
+                .map(f -> new Path(f))
+                .forEach(p -> {
+                    try {
+                        FileSystem fs = FileSystem.get(p.toUri(), getConf());
+                        if (fs.exists(p)) {
+                            log.info("Removing file: {}", p);
+                            try {
+                                fs.delete(p, false);
+                            } catch (IOException e) {
+                                fs.delete(p, false);
+                            }
                         }
+                    } catch (IOException e) {
+                        e.printStackTrace();
                     }
+
                 });
 
 
@@ -105,7 +111,7 @@ public class RollupBackup extends Configured implements BackupRestoreCommand {
         return files;
     }
 
-    private static Set<String> getSnapshotManifests(){
+    private static Set<String> getSnapshotManifests() {
         return new HashSet<>();
     }
 
