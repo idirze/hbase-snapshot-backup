@@ -2,7 +2,7 @@ package com.idirze.hbase.snapshot.backup.commad.impl;
 
 import com.idirze.hbase.snapshot.backup.cli.CreateBackupOptions;
 import com.idirze.hbase.snapshot.backup.commad.BackupCommand;
-import com.idirze.hbase.snapshot.backup.commad.BackupRestoreCommand;
+import com.idirze.hbase.snapshot.backup.commad.BackupRestoreOperation;
 import com.idirze.hbase.snapshot.backup.commad.BackupStatus;
 import com.idirze.hbase.snapshot.backup.manifest.BackupManifest;
 import com.idirze.hbase.snapshot.backup.manifest.BackupManifests;
@@ -16,7 +16,7 @@ import org.joda.time.DateTime;
 import java.net.URI;
 
 @Slf4j
-public class CreateBackup extends Configured implements BackupRestoreCommand {
+public class CreateBackup extends Configured implements BackupRestoreOperation {
 
     private String tableName;
     private String backupId;
@@ -40,6 +40,7 @@ public class CreateBackup extends Configured implements BackupRestoreCommand {
     public void execute() throws Exception {
 
         log.info("Export the snapshot: {} for table: {}", tableSnapshotId, tableName);
+
         ExportSnapshot exportSnapshot = new ExportSnapshot(tableSnapshotId, options.isSkipTmp());
         exportSnapshot.setConf(getConf());
         // options.setInputRootPath("hdfs:///apps/hbase/data");

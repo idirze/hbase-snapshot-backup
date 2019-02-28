@@ -14,7 +14,7 @@ import picocli.CommandLine.Parameters;
 @Data
 public class RollupBackupOptions {
 
-    @Parameters( index = "0",
+    @Parameters(index = "0",
             hidden = true)
     private BackupCommand command;
 

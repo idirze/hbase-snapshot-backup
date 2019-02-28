@@ -76,7 +76,7 @@ public class BackupManifest {
                 "date: " + date + "\n" +
                 "command: " + command + "\n" +
                 "backupRootDir: " + backupRootDir + "\n" +
-                "tables: " + tables+ "\n" +
+                "tables: " + tables + "\n" +
                 "status: " + status;
     }
 

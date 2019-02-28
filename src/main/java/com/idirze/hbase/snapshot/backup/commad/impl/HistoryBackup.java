@@ -1,7 +1,7 @@
 package com.idirze.hbase.snapshot.backup.commad.impl;
 
 import com.idirze.hbase.snapshot.backup.cli.HistoryBackupOptions;
-import com.idirze.hbase.snapshot.backup.commad.BackupRestoreCommand;
+import com.idirze.hbase.snapshot.backup.commad.BackupRestoreOperation;
 import com.idirze.hbase.snapshot.backup.manifest.BackupManifests;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -9,7 +9,7 @@ import org.apache.hadoop.conf.Configured;
 import static com.idirze.hbase.snapshot.backup.manifest.BackupManifest.BACKUP_MANIFEST_NAME;
 import static com.idirze.hbase.snapshot.backup.utils.FileUtils.path;
 
-public class HistoryBackup extends Configured implements BackupRestoreCommand {
+public class HistoryBackup extends Configured implements BackupRestoreOperation {
 
     private HistoryBackupOptions options;
 
@@ -23,7 +23,7 @@ public class HistoryBackup extends Configured implements BackupRestoreCommand {
         String backupManifestPath = path(options.getBackupRooPath(), BACKUP_MANIFEST_NAME);
 
         BackupManifests
-                .readFrom(getConf(),backupManifestPath)
+                .readFrom(getConf(), backupManifestPath)
                 .showHistory(options.getN());
     }
 

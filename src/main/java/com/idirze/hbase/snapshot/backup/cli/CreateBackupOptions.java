@@ -4,8 +4,6 @@ import lombok.Data;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
-import static picocli.CommandLine.Help.Visibility.ALWAYS;
-
 @Command(name = "create",
         mixinStandardHelpOptions = true,
         description = "Create a new backup image",

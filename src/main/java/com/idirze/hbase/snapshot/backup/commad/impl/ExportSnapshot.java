@@ -20,6 +20,7 @@ package com.idirze.hbase.snapshot.backup.commad.impl;
 
 import com.idirze.hbase.snapshot.backup.checksum.HadoopChecksum;
 import com.idirze.hbase.snapshot.backup.cli.BackupOptions;
+import com.idirze.hbase.snapshot.backup.cli.CreateBackupOptions;
 import com.idirze.hbase.snapshot.backup.hbase.FileLink;
 import com.idirze.hbase.snapshot.backup.hbase.HFileLink;
 import com.idirze.hbase.snapshot.backup.hbase.WALLink;
@@ -54,6 +55,7 @@ import org.apache.hadoop.mapreduce.*;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.apache.hadoop.mapreduce.security.TokenCache;
 import org.apache.hadoop.util.StringUtils;
+import org.apache.hadoop.util.Tool;
 
 import java.io.*;
 import java.util.*;
@@ -71,8 +73,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 @Slf4j
-public class ExportSnapshot extends Configured {
+public class ExportSnapshot extends Configured implements Tool {
 
+    protected static final String CONF_SKIP_TMP = "snapshot.export.skip.tmp";
+    static final String CONF_TEST_FAILURE = "test.snapshot.export.failure";
+    static final String CONF_TEST_RETRY = "test.snapshot.export.failure.retry";
     private static final String MR_NUM_MAPS = "mapreduce.job.maps";
     private static final String CONF_NUM_SPLITS = "snapshot.export.format.splits";
     private static final String CONF_SNAPSHOT_NAME = "snapshot.export.format.snapshot.name";
@@ -86,25 +91,372 @@ public class ExportSnapshot extends Configured {
     private static final String CONF_BUFFER_SIZE = "snapshot.export.buffer.size";
     private static final String CONF_MAP_GROUP = "snapshot.export.default.map.group";
     private static final String CONF_BANDWIDTH_MB = "snapshot.export.map.bandwidth.mb";
-    protected static final String CONF_SKIP_TMP = "snapshot.export.skip.tmp";
-
-    static final String CONF_TEST_FAILURE = "test.snapshot.export.failure";
-    static final String CONF_TEST_RETRY = "test.snapshot.export.failure.retry";
-
     private static final String INPUT_FOLDER_PREFIX = "export-files.";
-
-    // Export Map-Reduce Counters, to keep track of the progress
-    public enum Counter {
-        MISSING_FILES, FILES_COPIED, FILES_SKIPPED, COPY_FAILED,
-        BYTES_EXPECTED, BYTES_SKIPPED, BYTES_COPIED
-    }
-
+    private CreateBackupOptions options;
     private String backupId;
     private boolean skipTmp;
 
     public ExportSnapshot(String backupId, boolean skipTmp) {
         this.backupId = backupId;
         this.skipTmp = skipTmp;
+    }
+
+    /**
+     * Extract the list of files (HFiles/WALs) to copy using Map-Reduce.
+     *
+     * @return list of files referenced by the snapshot (pair of path and size)
+     */
+    private static List<Pair<SnapshotFileInfo, Long>> getSnapshotFiles(final Configuration conf,
+                                                                       final FileSystem fs, final Path snapshotDir) throws IOException {
+        SnapshotDescription snapshotDesc = SnapshotDescriptionUtils.readSnapshotInfo(fs, snapshotDir);
+
+        final List<Pair<SnapshotFileInfo, Long>> files = new ArrayList<Pair<SnapshotFileInfo, Long>>();
+        final TableName table = TableName.valueOf(snapshotDesc.getTable());
+
+        // Get snapshot files
+        log.info("Loading Snapshot '" + snapshotDesc.getName() + "' hfile list");
+        SnapshotReferenceUtil.visitReferencedFiles(conf, fs, snapshotDir, snapshotDesc,
+                new SnapshotReferenceUtil.SnapshotVisitor() {
+                    @Override
+                    public void storeFile(final HRegionInfo regionInfo, final String family,
+                                          final SnapshotRegionManifest.StoreFile storeFile) throws IOException {
+                        if (storeFile.hasReference()) {
+                            // copied as part of the manifest
+                        } else {
+                            String region = regionInfo.getEncodedName();
+                            String hfile = storeFile.getName();
+                            Path path = HFileLink.createPath(table, region, family, hfile);
+
+                            SnapshotFileInfo fileInfo = SnapshotFileInfo.newBuilder()
+                                    .setType(SnapshotFileInfo.Type.HFILE)
+                                    .setHfile(path.toString())
+                                    .build();
+
+                            long size;
+                            if (storeFile.hasFileSize()) {
+                                size = storeFile.getFileSize();
+                            } else {
+                                size = HFileLink.buildFromHFileLinkPattern(conf, path).getFileStatus(fs).getLen();
+                            }
+                            files.add(new Pair<SnapshotFileInfo, Long>(fileInfo, size));
+                        }
+                    }
+
+                    @Override
+                    public void logFile(final String server, final String logfile)
+                            throws IOException {
+                        SnapshotFileInfo fileInfo = SnapshotFileInfo.newBuilder()
+                                .setType(SnapshotFileInfo.Type.WAL)
+                                .setWalServer(server)
+                                .setWalName(logfile)
+                                .build();
+
+                        long size = new WALLink(conf, server, logfile).getFileStatus(fs).getLen();
+                        files.add(new Pair<SnapshotFileInfo, Long>(fileInfo, size));
+                    }
+                });
+
+        return files;
+    }
+
+    /**
+     * Given a list of file paths and sizes, create around ngroups in as balanced a way as possible.
+     * The groups created will have similar amounts of bytes.
+     * <p>
+     * The algorithm used is pretty straightforward; the file list is sorted by size,
+     * and then each group fetch the bigger file available, iterating through groups
+     * alternating the direction.
+     */
+    static List<List<Pair<SnapshotFileInfo, Long>>> getBalancedSplits(
+            final List<Pair<SnapshotFileInfo, Long>> files, final int ngroups) {
+        // Sort files by size, from small to big
+        Collections.sort(files, new Comparator<Pair<SnapshotFileInfo, Long>>() {
+            public int compare(Pair<SnapshotFileInfo, Long> a, Pair<SnapshotFileInfo, Long> b) {
+                long r = a.getSecond() - b.getSecond();
+                return (r < 0) ? -1 : ((r > 0) ? 1 : 0);
+            }
+        });
+
+        // create balanced groups
+        List<List<Pair<SnapshotFileInfo, Long>>> fileGroups =
+                new LinkedList<List<Pair<SnapshotFileInfo, Long>>>();
+        long[] sizeGroups = new long[ngroups];
+        int hi = files.size() - 1;
+        int lo = 0;
+
+        List<Pair<SnapshotFileInfo, Long>> group;
+        int dir = 1;
+        int g = 0;
+
+        while (hi >= lo) {
+            if (g == fileGroups.size()) {
+                group = new LinkedList<Pair<SnapshotFileInfo, Long>>();
+                fileGroups.add(group);
+            } else {
+                group = fileGroups.get(g);
+            }
+
+            Pair<SnapshotFileInfo, Long> fileInfo = files.get(hi--);
+
+            // add the hi one
+            sizeGroups[g] += fileInfo.getSecond();
+            group.add(fileInfo);
+
+            // change direction when at the end or the beginning
+            g += dir;
+            if (g == ngroups) {
+                dir = -1;
+                g = ngroups - 1;
+            } else if (g < 0) {
+                dir = 1;
+                g = 0;
+            }
+        }
+
+        if (log.isDebugEnabled()) {
+            for (int i = 0; i < sizeGroups.length; ++i) {
+                log.debug("export split=" + i + " size=" + StringUtils.humanReadableInt(sizeGroups[i]));
+            }
+        }
+
+        return fileGroups;
+    }
+
+    @Override
+    public int run(String[] args) throws Exception {
+        return execute(options);
+    }
+
+    public void setOptions(CreateBackupOptions options) {
+        this.options = options;
+    }
+
+    // ==========================================================================
+    //  Input Format
+    // ==========================================================================
+
+    /**
+     * Run Map-Reduce Job to perform the files copy.
+     */
+    private void runCopyJob(final Path inputRoot, final Path outputRoot,
+                            final String snapshotName, final Path snapshotDir, final boolean verifyChecksum,
+                            final String filesUser, final String filesGroup, final int filesMode,
+                            final int mappers, final int bandwidthMB)
+            throws IOException, InterruptedException, ClassNotFoundException {
+        Configuration conf = getConf();
+        if (filesGroup != null) conf.set(CONF_FILES_GROUP, filesGroup);
+        if (filesUser != null) conf.set(CONF_FILES_USER, filesUser);
+        if (mappers > 0) {
+            conf.setInt(CONF_NUM_SPLITS, mappers);
+            conf.setInt(MR_NUM_MAPS, mappers);
+        }
+        conf.setInt(CONF_FILES_MODE, filesMode);
+        conf.setBoolean(CONF_CHECKSUM_VERIFY, verifyChecksum);
+        conf.set(CONF_OUTPUT_ROOT, outputRoot.toString());
+        conf.set(CONF_INPUT_ROOT, inputRoot.toString());
+        conf.setInt(CONF_BANDWIDTH_MB, bandwidthMB);
+        conf.set(CONF_SNAPSHOT_NAME, snapshotName);
+        conf.set(CONF_SNAPSHOT_DIR, snapshotDir.toString());
+
+        Job job = new Job(conf);
+        job.setJobName("ExportSnapshot-" + snapshotName);
+        job.setJarByClass(ExportSnapshot.class);
+        TableMapReduceUtil.addDependencyJars(job);
+        job.setMapperClass(ExportMapper.class);
+        job.setInputFormatClass(ExportSnapshotInputFormat.class);
+        job.setOutputFormatClass(NullOutputFormat.class);
+        job.setMapSpeculativeExecution(false);
+        job.setNumReduceTasks(0);
+
+        // Acquire the delegation Tokens
+        TokenCache.obtainTokensForNamenodes(job.getCredentials(),
+                new Path[]{inputRoot, outputRoot}, conf);
+
+        // Run the MR Job
+        if (!job.waitForCompletion(true)) {
+            // TODO: Replace the fixed string with job.getStatus().getFailureInfo()
+            // when it will be available on all the supported versions.
+            throw new ExportSnapshotException("Copy Files Map-Reduce Job failed");
+        }
+    }
+
+    private void verifySnapshot(final Configuration baseConf,
+                                final FileSystem fs, final Path rootDir, final Path snapshotDir) throws IOException {
+        // Update the conf with the current root dir, since may be a different cluster
+        Configuration conf = new Configuration(baseConf);
+        FSUtils.setRootDir(conf, rootDir);
+        FSUtils.setFsDefault(conf, FSUtils.getRootDir(conf));
+        SnapshotDescription snapshotDesc = SnapshotDescriptionUtils.readSnapshotInfo(fs, snapshotDir);
+        SnapshotReferenceUtil.verifySnapshot(conf, fs, snapshotDir, snapshotDesc);
+    }
+
+    /**
+     * Set path ownership.
+     */
+    private void setOwner(final FileSystem fs, final Path path, final String user,
+                          final String group, final boolean recursive) throws IOException {
+        if (user != null || group != null) {
+            if (recursive && fs.isDirectory(path)) {
+                for (FileStatus child : fs.listStatus(path)) {
+                    setOwner(fs, child.getPath(), user, group, recursive);
+                }
+            }
+            fs.setOwner(path, user, group);
+        }
+    }
+
+    // ==========================================================================
+    //  Tool
+    // ==========================================================================
+
+    /**
+     * Set path permission.
+     */
+    private void setPermission(final FileSystem fs, final Path path, final short filesMode,
+                               final boolean recursive) throws IOException {
+        if (filesMode > 0) {
+            FsPermission perm = new FsPermission(filesMode);
+            if (recursive && fs.isDirectory(path)) {
+                for (FileStatus child : fs.listStatus(path)) {
+                    setPermission(fs, child.getPath(), filesMode, recursive);
+                }
+            }
+            fs.setPermission(path, perm);
+        }
+    }
+
+    /**
+     * Execute the export snapshot by copying the snapshot metadata, hfiles and wals.
+     *
+     * @return 0 on success, and != 0 upon failure.
+     */
+    public int execute(BackupOptions options) throws IOException {
+        boolean verifyTarget = true;
+        boolean verifyChecksum = !options.isNoChecksumVerify();
+        String snapshotName = checkNotNull(this.backupId, "backupId should not be null");
+        String targetName = this.backupId;
+        boolean overwrite = true;
+        String filesGroup = options.getChgroup();
+        String filesUser = options.getChuser();
+        int bandwidthMB = options.getBandwidth();
+        int filesMode = options.getChmod();
+        int mappers = options.getMappers();
+
+        Configuration conf = getConf();
+        // Path inputRoot = FSUtils.getRootDir(conf);
+        Path outputRoot = new Path(options.getOutputRootPath());
+        Path inputRoot = new Path(options.getInputRootPath());
+        // FSUtils.setRootDir(conf, inputRoot);
+
+        conf.setBoolean("fs." + inputRoot.toUri().getScheme() + ".impl.disable.cache", true);
+        FileSystem inputFs = FileSystem.get(inputRoot.toUri(), conf);
+        log.info("---> inputRoot = {}, inputRoot = {}", inputFs.getUri().toString(), inputRoot);
+
+        conf.setBoolean("fs." + outputRoot.toUri().getScheme() + ".impl.disable.cache", true);
+        FileSystem outputFs = FileSystem.get(outputRoot.toUri(), conf);
+        log.info("---> outputFs = {}, outputRoot = {}", outputFs.getUri().toString(), outputRoot.toString());
+
+        Path snapshotDir = SnapshotDescriptionUtils.getCompletedSnapshotDir(snapshotName, inputRoot);
+        Path snapshotTmpDir = SnapshotDescriptionUtils.getWorkingSnapshotDir(targetName, outputRoot);
+        Path outputSnapshotDir = SnapshotDescriptionUtils.getCompletedSnapshotDir(targetName, outputRoot);
+        Path initialOutputSnapshotDir = skipTmp ? outputSnapshotDir : snapshotTmpDir;
+
+        // Check if the snapshot already exists
+        if (outputFs.exists(outputSnapshotDir)) {
+            if (overwrite) {
+                if (!outputFs.delete(outputSnapshotDir, true)) {
+                    System.err.println("Unable to remove existing snapshot directory: " + outputSnapshotDir);
+                    return 1;
+                }
+
+            } else {
+                System.err.println("The snapshot '" + targetName +
+                        "' already exists in the destination: " + outputSnapshotDir);
+                return 1;
+            }
+        }
+
+        if (!skipTmp) {
+            // Check if the snapshot already in-progress
+            if (outputFs.exists(snapshotTmpDir)) {
+                if (overwrite) {
+                    if (!outputFs.delete(snapshotTmpDir, true)) {
+                        System.err.println("Unable to remove existing snapshot tmp directory: " + snapshotTmpDir);
+                        return 1;
+                    }
+                } else {
+                    System.err.println("A snapshot with the same name '" + targetName + "' may be in-progress");
+                    System.err.println("Please check " + snapshotTmpDir + ". If the snapshot has completed, ");
+                    System.err.println("consider removing " + snapshotTmpDir + " by using the -overwrite option");
+                    return 1;
+                }
+            }
+        }
+
+        // Step 1 - Copy fs1:/.snapshot/<snapshot> to  fs2:/.snapshot/.tmp/<snapshot>
+        // The snapshot references must be copied before the hfiles otherwise the cleaner
+        // will remove them because they are unreferenced.
+        try {
+            log.info("Copy Snapshot Manifest");
+            FileUtil.copy(inputFs, snapshotDir, outputFs, initialOutputSnapshotDir, false, false, conf);
+        } catch (IOException e) {
+            throw new ExportSnapshotException("Failed to copy the snapshot directory: from=" +
+                    snapshotDir + " to=" + initialOutputSnapshotDir, e);
+        }
+
+        // Write a new .snapshotinfo if the target name is different from the source name
+        if (!targetName.equals(snapshotName)) {
+
+            SnapshotDescription snapshotDesc =
+                    SnapshotDescriptionUtils.readSnapshotInfo(inputFs, snapshotDir)
+                            .toBuilder()
+                            .setName(targetName)
+                            .build();
+
+            SnapshotDescriptionUtils.writeSnapshotInfo(snapshotDesc, snapshotTmpDir, outputFs);
+        }
+
+        // Step 2 - Start MR Job to copy files
+        // The snapshot references must be copied before the files otherwise the files gets removed
+        // by the HFileArchiver, since they have no references.
+        try {
+            runCopyJob(inputRoot, outputRoot, snapshotName, snapshotDir, verifyChecksum,
+                    filesUser, filesGroup, filesMode, mappers, bandwidthMB);
+
+            log.info("Finalize the Snapshot Export");
+            if (!skipTmp) {
+                // Step 3 - Rename fs2:/.snapshot/.tmp/<snapshot> fs2:/.snapshot/<snapshot>
+                if (!outputFs.rename(snapshotTmpDir, outputSnapshotDir)) {
+                    throw new ExportSnapshotException("Unable to rename snapshot directory from=" +
+                            snapshotTmpDir + " to=" + outputSnapshotDir);
+                }
+            }
+
+            // Step 4 - Verify snapshot integrity
+            if (verifyTarget) {
+                log.info("Verify snapshot integrity");
+                verifySnapshot(conf, outputFs, outputRoot, outputSnapshotDir);
+            }
+
+            log.info("Export Completed: " + targetName);
+            return 0;
+        } catch (Exception e) {
+            log.error("Snapshot export failed", e);
+            if (!skipTmp) {
+                outputFs.delete(snapshotTmpDir, true);
+            }
+            outputFs.delete(outputSnapshotDir, true);
+            return 1;
+        } finally {
+            IOUtils.closeStream(inputFs);
+            IOUtils.closeStream(outputFs);
+        }
+    }
+
+    // Export Map-Reduce Counters, to keep track of the progress
+    public enum Counter {
+        MISSING_FILES, FILES_COPIED, FILES_SKIPPED, COPY_FAILED,
+        BYTES_EXPECTED, BYTES_SKIPPED, BYTES_COPIED
     }
 
     private static class ExportMapper extends Mapper<BytesWritable, NullWritable,
@@ -518,131 +870,6 @@ public class ExportSnapshot extends Configured {
         }
     }
 
-    // ==========================================================================
-    //  Input Format
-    // ==========================================================================
-
-    /**
-     * Extract the list of files (HFiles/WALs) to copy using Map-Reduce.
-     *
-     * @return list of files referenced by the snapshot (pair of path and size)
-     */
-    private static List<Pair<SnapshotFileInfo, Long>> getSnapshotFiles(final Configuration conf,
-                                                                       final FileSystem fs, final Path snapshotDir) throws IOException {
-        SnapshotDescription snapshotDesc = SnapshotDescriptionUtils.readSnapshotInfo(fs, snapshotDir);
-
-        final List<Pair<SnapshotFileInfo, Long>> files = new ArrayList<Pair<SnapshotFileInfo, Long>>();
-        final TableName table = TableName.valueOf(snapshotDesc.getTable());
-
-        // Get snapshot files
-        log.info("Loading Snapshot '" + snapshotDesc.getName() + "' hfile list");
-        SnapshotReferenceUtil.visitReferencedFiles(conf, fs, snapshotDir, snapshotDesc,
-                new SnapshotReferenceUtil.SnapshotVisitor() {
-                    @Override
-                    public void storeFile(final HRegionInfo regionInfo, final String family,
-                                          final SnapshotRegionManifest.StoreFile storeFile) throws IOException {
-                        if (storeFile.hasReference()) {
-                            // copied as part of the manifest
-                        } else {
-                            String region = regionInfo.getEncodedName();
-                            String hfile = storeFile.getName();
-                            Path path = HFileLink.createPath(table, region, family, hfile);
-
-                            SnapshotFileInfo fileInfo = SnapshotFileInfo.newBuilder()
-                                    .setType(SnapshotFileInfo.Type.HFILE)
-                                    .setHfile(path.toString())
-                                    .build();
-
-                            long size;
-                            if (storeFile.hasFileSize()) {
-                                size = storeFile.getFileSize();
-                            } else {
-                                size = HFileLink.buildFromHFileLinkPattern(conf, path).getFileStatus(fs).getLen();
-                            }
-                            files.add(new Pair<SnapshotFileInfo, Long>(fileInfo, size));
-                        }
-                    }
-
-                    @Override
-                    public void logFile(final String server, final String logfile)
-                            throws IOException {
-                        SnapshotFileInfo fileInfo = SnapshotFileInfo.newBuilder()
-                                .setType(SnapshotFileInfo.Type.WAL)
-                                .setWalServer(server)
-                                .setWalName(logfile)
-                                .build();
-
-                        long size = new WALLink(conf, server, logfile).getFileStatus(fs).getLen();
-                        files.add(new Pair<SnapshotFileInfo, Long>(fileInfo, size));
-                    }
-                });
-
-        return files;
-    }
-
-    /**
-     * Given a list of file paths and sizes, create around ngroups in as balanced a way as possible.
-     * The groups created will have similar amounts of bytes.
-     * <p>
-     * The algorithm used is pretty straightforward; the file list is sorted by size,
-     * and then each group fetch the bigger file available, iterating through groups
-     * alternating the direction.
-     */
-    static List<List<Pair<SnapshotFileInfo, Long>>> getBalancedSplits(
-            final List<Pair<SnapshotFileInfo, Long>> files, final int ngroups) {
-        // Sort files by size, from small to big
-        Collections.sort(files, new Comparator<Pair<SnapshotFileInfo, Long>>() {
-            public int compare(Pair<SnapshotFileInfo, Long> a, Pair<SnapshotFileInfo, Long> b) {
-                long r = a.getSecond() - b.getSecond();
-                return (r < 0) ? -1 : ((r > 0) ? 1 : 0);
-            }
-        });
-
-        // create balanced groups
-        List<List<Pair<SnapshotFileInfo, Long>>> fileGroups =
-                new LinkedList<List<Pair<SnapshotFileInfo, Long>>>();
-        long[] sizeGroups = new long[ngroups];
-        int hi = files.size() - 1;
-        int lo = 0;
-
-        List<Pair<SnapshotFileInfo, Long>> group;
-        int dir = 1;
-        int g = 0;
-
-        while (hi >= lo) {
-            if (g == fileGroups.size()) {
-                group = new LinkedList<Pair<SnapshotFileInfo, Long>>();
-                fileGroups.add(group);
-            } else {
-                group = fileGroups.get(g);
-            }
-
-            Pair<SnapshotFileInfo, Long> fileInfo = files.get(hi--);
-
-            // add the hi one
-            sizeGroups[g] += fileInfo.getSecond();
-            group.add(fileInfo);
-
-            // change direction when at the end or the beginning
-            g += dir;
-            if (g == ngroups) {
-                dir = -1;
-                g = ngroups - 1;
-            } else if (g < 0) {
-                dir = 1;
-                g = 0;
-            }
-        }
-
-        if (log.isDebugEnabled()) {
-            for (int i = 0; i < sizeGroups.length; ++i) {
-                log.debug("export split=" + i + " size=" + StringUtils.humanReadableInt(sizeGroups[i]));
-            }
-        }
-
-        return fileGroups;
-    }
-
     private static class ExportSnapshotInputFormat extends InputFormat<BytesWritable, NullWritable> {
         @Override
         public RecordReader<BytesWritable, NullWritable> createRecordReader(InputSplit split,
@@ -773,224 +1000,6 @@ public class ExportSnapshot extends Configured {
                 }
                 return (++index < files.size());
             }
-        }
-    }
-
-    // ==========================================================================
-    //  Tool
-    // ==========================================================================
-
-    /**
-     * Run Map-Reduce Job to perform the files copy.
-     */
-    private void runCopyJob(final Path inputRoot, final Path outputRoot,
-                            final String snapshotName, final Path snapshotDir, final boolean verifyChecksum,
-                            final String filesUser, final String filesGroup, final int filesMode,
-                            final int mappers, final int bandwidthMB)
-            throws IOException, InterruptedException, ClassNotFoundException {
-        Configuration conf = getConf();
-        if (filesGroup != null) conf.set(CONF_FILES_GROUP, filesGroup);
-        if (filesUser != null) conf.set(CONF_FILES_USER, filesUser);
-        if (mappers > 0) {
-            conf.setInt(CONF_NUM_SPLITS, mappers);
-            conf.setInt(MR_NUM_MAPS, mappers);
-        }
-        conf.setInt(CONF_FILES_MODE, filesMode);
-        conf.setBoolean(CONF_CHECKSUM_VERIFY, verifyChecksum);
-        conf.set(CONF_OUTPUT_ROOT, outputRoot.toString());
-        conf.set(CONF_INPUT_ROOT, inputRoot.toString());
-        conf.setInt(CONF_BANDWIDTH_MB, bandwidthMB);
-        conf.set(CONF_SNAPSHOT_NAME, snapshotName);
-        conf.set(CONF_SNAPSHOT_DIR, snapshotDir.toString());
-
-        Job job = new Job(conf);
-        job.setJobName("ExportSnapshot-" + snapshotName);
-        job.setJarByClass(ExportSnapshot.class);
-        TableMapReduceUtil.addDependencyJars(job);
-        job.setMapperClass(ExportMapper.class);
-        job.setInputFormatClass(ExportSnapshotInputFormat.class);
-        job.setOutputFormatClass(NullOutputFormat.class);
-        job.setMapSpeculativeExecution(false);
-        job.setNumReduceTasks(0);
-
-        // Acquire the delegation Tokens
-        TokenCache.obtainTokensForNamenodes(job.getCredentials(),
-                new Path[]{inputRoot, outputRoot}, conf);
-
-        // Run the MR Job
-        if (!job.waitForCompletion(true)) {
-            // TODO: Replace the fixed string with job.getStatus().getFailureInfo()
-            // when it will be available on all the supported versions.
-            throw new ExportSnapshotException("Copy Files Map-Reduce Job failed");
-        }
-    }
-
-    private void verifySnapshot(final Configuration baseConf,
-                                final FileSystem fs, final Path rootDir, final Path snapshotDir) throws IOException {
-        // Update the conf with the current root dir, since may be a different cluster
-        Configuration conf = new Configuration(baseConf);
-        FSUtils.setRootDir(conf, rootDir);
-        FSUtils.setFsDefault(conf, FSUtils.getRootDir(conf));
-        SnapshotDescription snapshotDesc = SnapshotDescriptionUtils.readSnapshotInfo(fs, snapshotDir);
-        SnapshotReferenceUtil.verifySnapshot(conf, fs, snapshotDir, snapshotDesc);
-    }
-
-    /**
-     * Set path ownership.
-     */
-    private void setOwner(final FileSystem fs, final Path path, final String user,
-                          final String group, final boolean recursive) throws IOException {
-        if (user != null || group != null) {
-            if (recursive && fs.isDirectory(path)) {
-                for (FileStatus child : fs.listStatus(path)) {
-                    setOwner(fs, child.getPath(), user, group, recursive);
-                }
-            }
-            fs.setOwner(path, user, group);
-        }
-    }
-
-    /**
-     * Set path permission.
-     */
-    private void setPermission(final FileSystem fs, final Path path, final short filesMode,
-                               final boolean recursive) throws IOException {
-        if (filesMode > 0) {
-            FsPermission perm = new FsPermission(filesMode);
-            if (recursive && fs.isDirectory(path)) {
-                for (FileStatus child : fs.listStatus(path)) {
-                    setPermission(fs, child.getPath(), filesMode, recursive);
-                }
-            }
-            fs.setPermission(path, perm);
-        }
-    }
-
-    /**
-     * Execute the export snapshot by copying the snapshot metadata, hfiles and wals.
-     *
-     * @return 0 on success, and != 0 upon failure.
-     */
-    public int execute(BackupOptions options) throws IOException {
-        boolean verifyTarget = true;
-        boolean verifyChecksum = !options.isNoChecksumVerify();
-        String snapshotName = checkNotNull(this.backupId, "backupId should not be null");
-        String targetName = this.backupId;
-        boolean overwrite = true;
-        String filesGroup = options.getChgroup();
-        String filesUser = options.getChuser();
-        int bandwidthMB = options.getBandwidth();
-        int filesMode = options.getChmod();
-        int mappers = options.getMappers();
-
-        Configuration conf = getConf();
-        // Path inputRoot = FSUtils.getRootDir(conf);
-        Path outputRoot = new Path(options.getOutputRootPath());
-        Path inputRoot = new Path(options.getInputRootPath());
-       // FSUtils.setRootDir(conf, inputRoot);
-
-        conf.setBoolean("fs." + inputRoot.toUri().getScheme() + ".impl.disable.cache", true);
-        FileSystem inputFs = FileSystem.get(inputRoot.toUri(), conf);
-        log.info("---> inputRoot = {}, inputRoot = {}", inputFs.getUri().toString(), inputRoot);
-
-        conf.setBoolean("fs." + outputRoot.toUri().getScheme() + ".impl.disable.cache", true);
-        FileSystem outputFs = FileSystem.get(outputRoot.toUri(), conf);
-        log.info("---> outputFs = {}, outputRoot = {}", outputFs.getUri().toString(), outputRoot.toString());
-
-        Path snapshotDir = SnapshotDescriptionUtils.getCompletedSnapshotDir(snapshotName, inputRoot);
-        Path snapshotTmpDir = SnapshotDescriptionUtils.getWorkingSnapshotDir(targetName, outputRoot);
-        Path outputSnapshotDir = SnapshotDescriptionUtils.getCompletedSnapshotDir(targetName, outputRoot);
-        Path initialOutputSnapshotDir = skipTmp ? outputSnapshotDir : snapshotTmpDir;
-
-        // Check if the snapshot already exists
-        if (outputFs.exists(outputSnapshotDir)) {
-            if (overwrite) {
-                if (!outputFs.delete(outputSnapshotDir, true)) {
-                    System.err.println("Unable to remove existing snapshot directory: " + outputSnapshotDir);
-                    return 1;
-                }
-
-            } else {
-                System.err.println("The snapshot '" + targetName +
-                        "' already exists in the destination: " + outputSnapshotDir);
-                return 1;
-            }
-        }
-
-        if (!skipTmp) {
-            // Check if the snapshot already in-progress
-            if (outputFs.exists(snapshotTmpDir)) {
-                if (overwrite) {
-                    if (!outputFs.delete(snapshotTmpDir, true)) {
-                        System.err.println("Unable to remove existing snapshot tmp directory: " + snapshotTmpDir);
-                        return 1;
-                    }
-                } else {
-                    System.err.println("A snapshot with the same name '" + targetName + "' may be in-progress");
-                    System.err.println("Please check " + snapshotTmpDir + ". If the snapshot has completed, ");
-                    System.err.println("consider removing " + snapshotTmpDir + " by using the -overwrite option");
-                    return 1;
-                }
-            }
-        }
-
-        // Step 1 - Copy fs1:/.snapshot/<snapshot> to  fs2:/.snapshot/.tmp/<snapshot>
-        // The snapshot references must be copied before the hfiles otherwise the cleaner
-        // will remove them because they are unreferenced.
-        try {
-            log.info("Copy Snapshot Manifest");
-            FileUtil.copy(inputFs, snapshotDir, outputFs, initialOutputSnapshotDir, false, false, conf);
-        } catch (IOException e) {
-            throw new ExportSnapshotException("Failed to copy the snapshot directory: from=" +
-                    snapshotDir + " to=" + initialOutputSnapshotDir, e);
-        }
-
-        // Write a new .snapshotinfo if the target name is different from the source name
-        if (!targetName.equals(snapshotName)) {
-
-            SnapshotDescription snapshotDesc =
-                    SnapshotDescriptionUtils.readSnapshotInfo(inputFs, snapshotDir)
-                            .toBuilder()
-                            .setName(targetName)
-                            .build();
-
-            SnapshotDescriptionUtils.writeSnapshotInfo(snapshotDesc, snapshotTmpDir, outputFs);
-        }
-
-        // Step 2 - Start MR Job to copy files
-        // The snapshot references must be copied before the files otherwise the files gets removed
-        // by the HFileArchiver, since they have no references.
-        try {
-            runCopyJob(inputRoot, outputRoot, snapshotName, snapshotDir, verifyChecksum,
-                    filesUser, filesGroup, filesMode, mappers, bandwidthMB);
-
-            log.info("Finalize the Snapshot Export");
-            if (!skipTmp) {
-                // Step 3 - Rename fs2:/.snapshot/.tmp/<snapshot> fs2:/.snapshot/<snapshot>
-                if (!outputFs.rename(snapshotTmpDir, outputSnapshotDir)) {
-                    throw new ExportSnapshotException("Unable to rename snapshot directory from=" +
-                            snapshotTmpDir + " to=" + outputSnapshotDir);
-                }
-            }
-
-            // Step 4 - Verify snapshot integrity
-            if (verifyTarget) {
-                log.info("Verify snapshot integrity");
-                verifySnapshot(conf, outputFs, outputRoot, outputSnapshotDir);
-            }
-
-            log.info("Export Completed: " + targetName);
-            return 0;
-        } catch (Exception e) {
-            log.error("Snapshot export failed", e);
-            if (!skipTmp) {
-                outputFs.delete(snapshotTmpDir, true);
-            }
-            outputFs.delete(outputSnapshotDir, true);
-            return 1;
-        } finally {
-            IOUtils.closeStream(inputFs);
-            IOUtils.closeStream(outputFs);
         }
     }
 

@@ -6,7 +6,6 @@ public enum BackupCommand {
 
     CREATE,
     RESTORE,
-    DELETE,
     HISTORY,
     ROLLUP,
     HELP;

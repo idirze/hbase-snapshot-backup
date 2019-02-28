@@ -28,19 +28,19 @@ import java.io.IOException;
 
 /**
  * WALLink describes a link to a WAL.
- *
+ * <p>
  * An wal can be in /hbase/.logs/<server>/<wal>
  * or it can be in /hbase/.oldlogs/<wal>
- *
+ * <p>
  * The link checks first in the original path,
  * if it is not present it fallbacks to the archived path.
  */
 @InterfaceAudience.Private
 public class WALLink extends FileLink {
     /**
-     * @param conf {@link Configuration} from which to extract specific archive locations
+     * @param conf       {@link Configuration} from which to extract specific archive locations
      * @param serverName Region Server owner of the log
-     * @param logName WAL file name
+     * @param logName    WAL file name
      * @throws IOException on unexpected error.
      */
     public WALLink(final Configuration conf,
@@ -49,9 +49,9 @@ public class WALLink extends FileLink {
     }
 
     /**
-     * @param rootDir Path to the root directory where hbase files are stored
+     * @param rootDir    Path to the root directory where hbase files are stored
      * @param serverName Region Server owner of the log
-     * @param logName WAL file name
+     * @param logName    WAL file name
      */
     public WALLink(final Path rootDir, final String serverName, final String logName) {
         final Path oldLogDir = new Path(rootDir, HConstants.HREGION_OLDLOGDIR_NAME);
@@ -60,7 +60,7 @@ public class WALLink extends FileLink {
     }
 
     /**
-     * @param originPath Path to the wal in the log directory
+     * @param originPath  Path to the wal in the log directory
      * @param archivePath Path to the wal in the archived log directory
      */
     public WALLink(final Path originPath, final Path archivePath) {

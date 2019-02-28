@@ -11,7 +11,6 @@ import org.apache.hadoop.hbase.NamespaceDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
-import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
 import org.apache.hadoop.hbase.protobuf.generated.SnapshotProtos;
 import org.apache.hadoop.hbase.protobuf.generated.SnapshotProtos.SnapshotFileInfo.Type;
@@ -98,120 +97,79 @@ public class SnapshotBackupUtils {
     }
 
 
-    public static void createSnapshot(Configuration conf,
+    public static void createSnapshot(Connection connection,
                                       String tableName,
                                       String snapshotName,
                                       String snapshotType) throws Exception {
-        Connection connection = null;
-        Admin admin = null;
-        try {
-            connection = ConnectionFactory.createConnection(conf);
-            admin = connection.getAdmin();
+
+        try (Admin admin = connection.getAdmin()) {
             HBaseProtos.SnapshotDescription.Type type = HBaseProtos.SnapshotDescription.Type.FLUSH;
             if (snapshotType != null) {
                 type = HBaseProtos.SnapshotDescription.Type.valueOf(snapshotType.toUpperCase());
             }
-
             admin.snapshot(snapshotName, TableName.valueOf(tableName), type);
-        } finally {
-            if (admin != null) {
-                admin.close();
-            }
-            if (connection != null) {
-                connection.close();
-            }
         }
     }
 
-    public static void deleteSnapshot(Configuration conf,
+    public static void deleteSnapshot(Connection connection,
                                       String snapshotName) throws Exception {
-        Connection connection = null;
-        Admin admin = null;
-        try {
-            connection = ConnectionFactory.createConnection(conf);
-            admin = connection.getAdmin();
+
+        try (Admin admin = connection.getAdmin()) {
             admin.deleteSnapshot(snapshotName);
-        } finally {
-            if (admin != null) {
-                admin.close();
-            }
-            if (connection != null) {
-                connection.close();
-            }
         }
     }
 
-    public static void restoreSnapshot(Configuration conf,
+    public static void restoreSnapshot(Connection connection,
                                        String snapshotName) throws Exception {
-        Connection connection = null;
-        Admin admin = null;
-        try {
-            connection = ConnectionFactory.createConnection(conf);
-            admin = connection.getAdmin();
+        try (Admin admin = connection.getAdmin()) {
             admin.restoreSnapshot(snapshotName);
-        } finally {
-            if (admin != null) {
-                admin.close();
-            }
-            if (connection != null) {
-                connection.close();
-            }
         }
     }
 
-    public static void enableTable(Configuration conf,
+    public static void cloneSnapshot(Connection connection,
+                                     String snapshotName, String table) throws Exception {
+        try (Admin admin = connection.getAdmin()) {
+            TableName tableName = TableName.valueOf(table);
+            if (admin.tableExists(tableName)) {
+                if (admin.isTableEnabled(tableName)) {
+                    admin.disableTable(tableName);
+                }
+                log.info("Dropping the target table {}", table);
+                admin.deleteTable(tableName);
+            }
+
+            log.info("Cloning the snapshot {} into the target table {}", snapshotName, table);
+            admin.cloneSnapshot(snapshotName, tableName);
+        }
+    }
+
+    public static void enableTable(Connection connection,
                                    String table) throws Exception {
-        Connection connection = null;
-        Admin admin = null;
-        try {
-            connection = ConnectionFactory.createConnection(conf);
-            admin = connection.getAdmin();
+        try (Admin admin = connection.getAdmin()) {
             TableName tableName = TableName.valueOf(table);
             if (admin.tableExists(tableName)
                     && admin.isTableDisabled(tableName)) {
                 admin.enableTable(tableName);
-                checkAvailable(conf, table);
-            }
-        } finally {
-            if (admin != null) {
-                admin.close();
-            }
-            if (connection != null) {
-                connection.close();
+                checkAvailable(connection, table);
             }
         }
     }
 
-    public static void disableTable(Configuration conf,
+    public static void disableTable(Connection connection,
                                     String table) throws Exception {
-        Connection connection = null;
-        Admin admin = null;
-        try {
-            connection = ConnectionFactory.createConnection(conf);
-            admin = connection.getAdmin();
+        try (Admin admin = connection.getAdmin()) {
             TableName tableName = TableName.valueOf(table);
             if (admin.tableExists(tableName)
                     && admin.isTableEnabled(tableName)) {
                 admin.disableTable(tableName);
             }
-        } finally {
-            if (admin != null) {
-                admin.close();
-            }
-            if (connection != null) {
-                connection.close();
-            }
         }
     }
 
-    public static List<TableName> listTableNamesByNamespaces(Configuration conf,
+    public static List<TableName> listTableNamesByNamespaces(Connection connection,
                                                              List<String> namespaces) throws Exception {
         List<TableName> tableNames = new ArrayList<>();
-        Connection connection = null;
-        Admin admin = null;
-        try {
-            connection = ConnectionFactory.createConnection(conf);
-            admin = connection.getAdmin();
+        try (Admin admin = connection.getAdmin()) {
 
             for (String ns : namespaces) {
                 tableNames.addAll(Arrays.asList(admin.listTableNamesByNamespace(ns)));
@@ -219,24 +177,13 @@ public class SnapshotBackupUtils {
 
             return tableNames;
 
-        } finally {
-            if (admin != null) {
-                admin.close();
-            }
-            if (connection != null) {
-                connection.close();
-            }
         }
     }
 
-    public static List<TableName> listTableNames(Configuration conf,
+    public static List<TableName> listTableNames(Connection connection,
                                                  List<String> tables) throws Exception {
         List<TableName> tableNames = new ArrayList<>();
-        Connection connection = null;
-        Admin admin = null;
-        try {
-            connection = ConnectionFactory.createConnection(conf);
-            admin = connection.getAdmin();
+        try (Admin admin = connection.getAdmin()) {
 
             tableNames.addAll(Arrays.asList(admin.listTableNames())
                     .stream()
@@ -245,32 +192,18 @@ public class SnapshotBackupUtils {
 
             return tableNames;
 
-        } finally {
-            if (admin != null) {
-                admin.close();
-            }
-            if (connection != null) {
-                connection.close();
-            }
         }
     }
 
 
-    public static boolean checkAvailable(Configuration conf,
+    public static boolean checkAvailable(Connection connection,
                                          String table) throws Exception {
-
-        Connection connection = null;
-        Admin admin = null;
-
-        try {
-
-            connection = ConnectionFactory.createConnection(conf);
-            admin = connection.getAdmin();
+        try (Admin admin = connection.getAdmin()) {
 
             long startTime = EnvironmentEdgeManager.currentTime();
             while (!admin.isTableAvailable(TableName.valueOf(table))) {
                 try {
-                    Thread.sleep(100);
+                    Thread.sleep(1000);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                 }
@@ -279,13 +212,6 @@ public class SnapshotBackupUtils {
                             + table + " is still not available");
                 }
             }
-        } finally {
-            if (admin != null) {
-                admin.close();
-            }
-            if (connection != null) {
-                connection.close();
-            }
         }
 
         return true;
@@ -293,10 +219,9 @@ public class SnapshotBackupUtils {
     }
 
 
-    public static void createNamespaceIfNotExistsForTable(Configuration conf, final String table) throws IOException {
+    public static void createNamespaceIfNotExistsForTable(Connection connection, final String table) throws IOException {
 
-        try (Connection conn = ConnectionFactory.createConnection(conf);
-             Admin admin = conn.getAdmin()) {
+        try (Admin admin = connection.getAdmin()) {
 
             String namespaceName = TableName.valueOf(table).getNamespaceAsString();
             NamespaceDescriptor ns = NamespaceDescriptor.create(namespaceName).build();

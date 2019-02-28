@@ -1,31 +1,32 @@
 package com.idirze.hbase.snapshot.backup.hbase;
 
-import com.idirze.hbase.snapshot.backup.commad.BackupRestoreCommand;
+import com.idirze.hbase.snapshot.backup.commad.BackupRestoreOperation;
 import com.idirze.hbase.snapshot.backup.utils.SnapshotBackupUtils;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
+import org.apache.hadoop.hbase.client.Connection;
 
 @Slf4j
-public class DisableTable extends Configured implements BackupRestoreCommand {
+public class DisableTable extends Configured implements BackupRestoreOperation {
 
 
     private String tableName;
+    private Connection connection;
 
-    public DisableTable(Configuration conf, String tableName) {
-        setConf(conf);
+    public DisableTable(Connection connection, String tableName) {
+        this.connection = connection;
         this.tableName = tableName;
     }
 
     @Override
     public void execute() throws Exception {
         log.info("Disable table: {}", tableName);
-        SnapshotBackupUtils.disableTable(getConf(), tableName);
+        SnapshotBackupUtils.disableTable(connection, tableName);
     }
 
     @Override
     public void rollback() throws Exception {
         log.info("Rollback - Enable table: {}", tableName);
-        SnapshotBackupUtils.enableTable(getConf(), tableName);
+        SnapshotBackupUtils.enableTable(connection, tableName);
     }
 }

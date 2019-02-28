@@ -1,9 +1,8 @@
 package com.idirze.hbase.snapshot.backup;
 
-import com.idirze.hbase.snapshot.backup.commad.impl.BackupRestoreCommandImpl;
+import com.idirze.hbase.snapshot.backup.commad.impl.BackupRestoreCommands;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.util.ToolRunner;
 
@@ -15,7 +14,7 @@ public class HbaseBackupRestore {
 
         final Configuration conf = HBaseConfiguration.create();
 
-        System.exit(ToolRunner.run(conf, new BackupRestoreCommandImpl(conf), args));
+        System.exit(ToolRunner.run(conf, new BackupRestoreCommands(), args));
 
     }
 

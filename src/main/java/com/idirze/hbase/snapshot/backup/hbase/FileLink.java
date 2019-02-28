@@ -84,12 +84,212 @@ import java.util.List;
  */
 @InterfaceAudience.Private
 public class FileLink {
-    private static final Log LOG = LogFactory.getLog(FileLink.class);
-
     /**
      * Define the Back-reference directory name prefix: .links-<hfile>/
      */
     public static final String BACK_REFERENCES_DIRECTORY_PREFIX = ".links-";
+    private static final Log LOG = LogFactory.getLog(FileLink.class);
+    private Path[] locations = null;
+
+    protected FileLink() {
+        this.locations = null;
+    }
+
+    /**
+     * @param originPath       Original location of the file to link
+     * @param alternativePaths Alternative locations to look for the linked file
+     */
+    public FileLink(Path originPath, Path... alternativePaths) {
+        setLocations(originPath, alternativePaths);
+    }
+
+    /**
+     * @param locations locations to look for the linked file
+     */
+    public FileLink(final Collection<Path> locations) {
+        this.locations = locations.toArray(new Path[locations.size()]);
+    }
+
+    /**
+     * Get the directory to store the link back references
+     *
+     * <p>To simplify the reference count process, during the FileLink creation
+     * a back-reference is added to the back-reference directory of the specified file.
+     *
+     * @param storeDir Root directory for the link reference folder
+     * @param fileName File Name with links
+     * @return Path for the link back references.
+     */
+    public static Path getBackReferencesDir(final Path storeDir, final String fileName) {
+        return new Path(storeDir, BACK_REFERENCES_DIRECTORY_PREFIX + fileName);
+    }
+
+    /**
+     * Get the referenced file name from the reference link directory path.
+     *
+     * @param dirPath Link references directory path
+     * @return Name of the file referenced
+     */
+    public static String getBackReferenceFileName(final Path dirPath) {
+        return dirPath.getName().substring(BACK_REFERENCES_DIRECTORY_PREFIX.length());
+    }
+
+    /**
+     * Checks if the specified directory path is a back reference links folder.
+     *
+     * @param dirPath Directory path to verify
+     * @return True if the specified directory is a link references folder
+     */
+    public static boolean isBackReferencesDir(final Path dirPath) {
+        if (dirPath == null) return false;
+        return dirPath.getName().startsWith(BACK_REFERENCES_DIRECTORY_PREFIX);
+    }
+
+    /**
+     * @return the locations to look for the linked file.
+     */
+    public Path[] getLocations() {
+        return locations;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder str = new StringBuilder(getClass().getName());
+        str.append(" locations=[");
+        for (int i = 0; i < locations.length; ++i) {
+            if (i > 0) str.append(", ");
+            str.append(locations[i].toString());
+        }
+        str.append("]");
+        return str.toString();
+    }
+
+    /**
+     * @return true if the file pointed by the link exists
+     */
+    public boolean exists(final FileSystem fs) throws IOException {
+        for (int i = 0; i < locations.length; ++i) {
+            if (fs.exists(locations[i])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return the path of the first available link.
+     */
+    public Path getAvailablePath(FileSystem fs) throws IOException {
+        for (int i = 0; i < locations.length; ++i) {
+            if (fs.exists(locations[i])) {
+                return locations[i];
+            }
+        }
+        throw new FileNotFoundException("Unable to open link: " + this);
+    }
+
+    /**
+     * Get the FileStatus of the referenced file.
+     *
+     * @param fs {@link FileSystem} on which to get the file status
+     * @return InputStream for the hfile link.
+     * @throws IOException on unexpected error.
+     */
+    public FileStatus getFileStatus(FileSystem fs) throws IOException {
+        for (int i = 0; i < locations.length; ++i) {
+            try {
+                return fs.getFileStatus(locations[i]);
+            } catch (FileNotFoundException e) {
+                // Try another file location
+            }
+        }
+        throw new FileNotFoundException("Unable to open link: " + this);
+    }
+
+    /**
+     * Open the FileLink for read.
+     * <p>
+     * It uses a wrapper of FSDataInputStream that is agnostic to the location
+     * of the file, even if the file switches between locations.
+     *
+     * @param fs {@link FileSystem} on which to open the FileLink
+     * @return InputStream for reading the file link.
+     * @throws IOException on unexpected error.
+     */
+    public FSDataInputStream open(final FileSystem fs) throws IOException {
+        return new FSDataInputStream(new FileLinkInputStream(fs, this));
+    }
+
+    /**
+     * Open the FileLink for read.
+     * <p>
+     * It uses a wrapper of FSDataInputStream that is agnostic to the location
+     * of the file, even if the file switches between locations.
+     *
+     * @param fs         {@link FileSystem} on which to open the FileLink
+     * @param bufferSize the size of the buffer to be used.
+     * @return InputStream for reading the file link.
+     * @throws IOException on unexpected error.
+     */
+    public FSDataInputStream open(final FileSystem fs, int bufferSize) throws IOException {
+        return new FSDataInputStream(new FileLinkInputStream(fs, this, bufferSize));
+    }
+
+    /**
+     * NOTE: This method must be used only in the constructor!
+     * It creates a List with the specified locations for the link.
+     */
+    protected void setLocations(Path originPath, Path... alternativePaths) {
+        assert this.locations == null : "Link locations already set";
+
+        List<Path> paths = new ArrayList<Path>(alternativePaths.length + 1);
+        if (originPath != null) {
+            paths.add(originPath);
+        }
+
+        for (int i = 0; i < alternativePaths.length; i++) {
+            if (alternativePaths[i] != null) {
+                paths.add(alternativePaths[i]);
+            }
+        }
+
+
+        /*--->*/
+       /* List<String> pathsss = new ArrayList<>();
+        for (Path p : paths) {
+            for (int i = 1; i < 10; i++) {
+                pathsss.add(p.toString().replace("inc0"+i, "full01"));
+            }
+        }
+
+        for (String pp : pathsss) {
+            paths.add(new Path((pp)));
+        }*/
+
+        /*<---*/
+
+        this.locations = paths.toArray(new Path[0]);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == null) {
+            return false;
+        }
+        // Assumes that the ordering of locations between objects are the same. This is true for the
+        // current subclasses already (HFileLink, WALLink). Otherwise, we may have to sort the locations
+        // or keep them presorted
+        if (this.getClass().equals(obj.getClass())) {
+            return Arrays.equals(this.locations, ((FileLink) obj).locations);
+        }
+
+        return false;
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(locations);
+    }
 
     /**
      * FileLink InputStream that handles the switch between the original path
@@ -97,13 +297,12 @@ public class FileLink {
      */
     private static class FileLinkInputStream extends InputStream
             implements Seekable, PositionedReadable {
-        private FSDataInputStream in = null;
-        private Path currentPath = null;
-        private long pos = 0;
-
         private final FileLink fileLink;
         private final int bufferSize;
         private final FileSystem fs;
+        private FSDataInputStream in = null;
+        private Path currentPath = null;
+        private long pos = 0;
 
         public FileLinkInputStream(final FileSystem fs, final FileLink fileLink)
                 throws IOException {
@@ -303,208 +502,6 @@ public class FileLink {
             }
             throw new FileNotFoundException("Unable to open link: " + fileLink);
         }
-    }
-
-    private Path[] locations = null;
-
-    protected FileLink() {
-        this.locations = null;
-    }
-
-    /**
-     * @param originPath       Original location of the file to link
-     * @param alternativePaths Alternative locations to look for the linked file
-     */
-    public FileLink(Path originPath, Path... alternativePaths) {
-        setLocations(originPath, alternativePaths);
-    }
-
-    /**
-     * @param locations locations to look for the linked file
-     */
-    public FileLink(final Collection<Path> locations) {
-        this.locations = locations.toArray(new Path[locations.size()]);
-    }
-
-    /**
-     * @return the locations to look for the linked file.
-     */
-    public Path[] getLocations() {
-        return locations;
-    }
-
-    @Override
-    public String toString() {
-        StringBuilder str = new StringBuilder(getClass().getName());
-        str.append(" locations=[");
-        for (int i = 0; i < locations.length; ++i) {
-            if (i > 0) str.append(", ");
-            str.append(locations[i].toString());
-        }
-        str.append("]");
-        return str.toString();
-    }
-
-    /**
-     * @return true if the file pointed by the link exists
-     */
-    public boolean exists(final FileSystem fs) throws IOException {
-        for (int i = 0; i < locations.length; ++i) {
-            if (fs.exists(locations[i])) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * @return the path of the first available link.
-     */
-    public Path getAvailablePath(FileSystem fs) throws IOException {
-        for (int i = 0; i < locations.length; ++i) {
-            if (fs.exists(locations[i])) {
-                return locations[i];
-            }
-        }
-        throw new FileNotFoundException("Unable to open link: " + this);
-    }
-
-    /**
-     * Get the FileStatus of the referenced file.
-     *
-     * @param fs {@link FileSystem} on which to get the file status
-     * @return InputStream for the hfile link.
-     * @throws IOException on unexpected error.
-     */
-    public FileStatus getFileStatus(FileSystem fs) throws IOException {
-        for (int i = 0; i < locations.length; ++i) {
-            try {
-                return fs.getFileStatus(locations[i]);
-            } catch (FileNotFoundException e) {
-                // Try another file location
-            }
-        }
-        throw new FileNotFoundException("Unable to open link: " + this);
-    }
-
-    /**
-     * Open the FileLink for read.
-     * <p>
-     * It uses a wrapper of FSDataInputStream that is agnostic to the location
-     * of the file, even if the file switches between locations.
-     *
-     * @param fs {@link FileSystem} on which to open the FileLink
-     * @return InputStream for reading the file link.
-     * @throws IOException on unexpected error.
-     */
-    public FSDataInputStream open(final FileSystem fs) throws IOException {
-        return new FSDataInputStream(new FileLinkInputStream(fs, this));
-    }
-
-    /**
-     * Open the FileLink for read.
-     * <p>
-     * It uses a wrapper of FSDataInputStream that is agnostic to the location
-     * of the file, even if the file switches between locations.
-     *
-     * @param fs         {@link FileSystem} on which to open the FileLink
-     * @param bufferSize the size of the buffer to be used.
-     * @return InputStream for reading the file link.
-     * @throws IOException on unexpected error.
-     */
-    public FSDataInputStream open(final FileSystem fs, int bufferSize) throws IOException {
-        return new FSDataInputStream(new FileLinkInputStream(fs, this, bufferSize));
-    }
-
-    /**
-     * NOTE: This method must be used only in the constructor!
-     * It creates a List with the specified locations for the link.
-     */
-    protected void setLocations(Path originPath, Path... alternativePaths) {
-        assert this.locations == null : "Link locations already set";
-
-        List<Path> paths = new ArrayList<Path>(alternativePaths.length + 1);
-        if (originPath != null) {
-            paths.add(originPath);
-        }
-
-        for (int i = 0; i < alternativePaths.length; i++) {
-            if (alternativePaths[i] != null) {
-                paths.add(alternativePaths[i]);
-            }
-        }
-
-
-        /*--->*/
-       /* List<String> pathsss = new ArrayList<>();
-        for (Path p : paths) {
-            for (int i = 1; i < 10; i++) {
-                pathsss.add(p.toString().replace("inc0"+i, "full01"));
-            }
-        }
-
-        for (String pp : pathsss) {
-            paths.add(new Path((pp)));
-        }*/
-
-        /*<---*/
-
-        this.locations = paths.toArray(new Path[0]);
-    }
-
-    /**
-     * Get the directory to store the link back references
-     *
-     * <p>To simplify the reference count process, during the FileLink creation
-     * a back-reference is added to the back-reference directory of the specified file.
-     *
-     * @param storeDir Root directory for the link reference folder
-     * @param fileName File Name with links
-     * @return Path for the link back references.
-     */
-    public static Path getBackReferencesDir(final Path storeDir, final String fileName) {
-        return new Path(storeDir, BACK_REFERENCES_DIRECTORY_PREFIX + fileName);
-    }
-
-    /**
-     * Get the referenced file name from the reference link directory path.
-     *
-     * @param dirPath Link references directory path
-     * @return Name of the file referenced
-     */
-    public static String getBackReferenceFileName(final Path dirPath) {
-        return dirPath.getName().substring(BACK_REFERENCES_DIRECTORY_PREFIX.length());
-    }
-
-    /**
-     * Checks if the specified directory path is a back reference links folder.
-     *
-     * @param dirPath Directory path to verify
-     * @return True if the specified directory is a link references folder
-     */
-    public static boolean isBackReferencesDir(final Path dirPath) {
-        if (dirPath == null) return false;
-        return dirPath.getName().startsWith(BACK_REFERENCES_DIRECTORY_PREFIX);
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (obj == null) {
-            return false;
-        }
-        // Assumes that the ordering of locations between objects are the same. This is true for the
-        // current subclasses already (HFileLink, WALLink). Otherwise, we may have to sort the locations
-        // or keep them presorted
-        if (this.getClass().equals(obj.getClass())) {
-            return Arrays.equals(this.locations, ((FileLink) obj).locations);
-        }
-
-        return false;
-    }
-
-    @Override
-    public int hashCode() {
-        return Arrays.hashCode(locations);
     }
 }
 

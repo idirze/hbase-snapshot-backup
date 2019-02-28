@@ -22,23 +22,11 @@ import java.util.*;
 @Data
 public class BackupManifests {
 
-    @Getter
-    private Set<BackupManifest> manifests = new TreeSet<>(new SortByDate());
     private static ObjectMapper objectMapper = new ObjectMapper();
     private static String manifestPath;
     private static Configuration configuration;
-
-    public BackupManifests add(BackupManifest manifest) {
-        manifests.add(manifest);
-        return this;
-    }
-
-    public Optional<BackupManifest> findByTable(String backupId) {
-        return manifests
-                .stream()
-                .filter(m -> m.getBackupId() != null && m.getBackupId().equals(backupId))
-                .findFirst();
-    }
+    @Getter
+    private Set<BackupManifest> manifests = new TreeSet<>(new SortByDate());
 
     public static BackupManifests readFrom(Configuration conf, String path) throws IOException {
         setPath(conf, path);
@@ -64,6 +52,23 @@ public class BackupManifests {
 
         return new BackupManifests()
                 .addAll(objectMapper.readValue(json, BackupManifests.class).getManifests());
+    }
+
+    private static synchronized void setPath(Configuration conf, String path) {
+        configuration = conf;
+        manifestPath = path;
+    }
+
+    public BackupManifests add(BackupManifest manifest) {
+        manifests.add(manifest);
+        return this;
+    }
+
+    public Optional<BackupManifest> findByTable(String backupId) {
+        return manifests
+                .stream()
+                .filter(m -> m.getBackupId() != null && m.getBackupId().equals(backupId))
+                .findFirst();
     }
 
     public void writeTo(Configuration conf, String path) throws IOException {
@@ -138,11 +143,6 @@ public class BackupManifests {
                     .parseDateTime(n1.getDate())
                     .compareTo(BackupManifest.pattern.parseDateTime(n2.getDate()));
         }
-    }
-
-    private static synchronized void setPath(Configuration conf, String path) {
-        configuration = conf;
-        manifestPath = path;
     }
 
 }

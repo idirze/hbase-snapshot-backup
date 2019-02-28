@@ -39,23 +39,21 @@ import java.util.regex.Pattern;
 
 /**
  * HFileLink describes a link to an hfile.
- *
+ * <p>
  * An hfile can be served from a region or from the hfile archive directory (/hbase/.archive)
  * HFileLink allows to access the referenced hfile regardless of the location where it is.
  *
  * <p>Searches for hfiles in the following order and locations:
  * <ul>
- *  <li>/hbase/table/region/cf/hfile</li>
- *  <li>/hbase/.archive/table/region/cf/hfile</li>
+ * <li>/hbase/table/region/cf/hfile</li>
+ * <li>/hbase/.archive/table/region/cf/hfile</li>
  * </ul>
- *
+ * <p>
  * The link checks first in the original path if it is not present
  * it fallbacks to the archived path.
  */
 @InterfaceAudience.Private
 public class HFileLink extends FileLink {
-    private static final Log LOG = LogFactory.getLog(HFileLink.class);
-
     /**
      * A non-capture group, for HFileLink, so that this can be embedded.
      * The HFileLink describe a link to an hfile in a different table/region
@@ -70,14 +68,15 @@ public class HFileLink extends FileLink {
             String.format("(?:(?:%s=)?)%s=%s-%s",
                     TableName.VALID_NAMESPACE_REGEX, TableName.VALID_TABLE_QUALIFIER_REGEX,
                     HRegionInfo.ENCODED_REGION_NAME_REGEX, StoreFileInfo.HFILE_NAME_REGEX);
-
-    /** Define the HFile Link name parser in the form of: table=region-hfile */
+    /**
+     * Define the HFile Link name parser in the form of: table=region-hfile
+     */
     //made package private for testing
     static final Pattern LINK_NAME_PATTERN =
             Pattern.compile(String.format("^(?:(%s)(?:\\=))?(%s)=(%s)-(%s)$",
                     TableName.VALID_NAMESPACE_REGEX, TableName.VALID_TABLE_QUALIFIER_REGEX,
                     HRegionInfo.ENCODED_REGION_NAME_REGEX, StoreFileInfo.HFILE_NAME_REGEX));
-
+    private static final Log LOG = LogFactory.getLog(HFileLink.class);
     /**
      * The pattern should be used for hfile and reference links
      * that can be found in /hbase/table/region/family/
@@ -104,7 +103,7 @@ public class HFileLink extends FileLink {
     }
 
     /**
-     * @param conf {@link Configuration} from which to extract specific archive locations
+     * @param conf             {@link Configuration} from which to extract specific archive locations
      * @param hFileLinkPattern The path ending with a HFileLink pattern. (table=region-hfile)
      * @throws IOException on unexpected error.
      */
@@ -115,8 +114,8 @@ public class HFileLink extends FileLink {
     }
 
     /**
-     * @param rootDir Path to the root directory where hbase files are stored
-     * @param archiveDir Path to the hbase archive directory
+     * @param rootDir          Path to the root directory where hbase files are stored
+     * @param archiveDir       Path to the hbase archive directory
      * @param hFileLinkPattern The path of the HFile Link.
      */
     public final static HFileLink buildFromHFileLinkPattern(final Path rootDir,
@@ -131,10 +130,11 @@ public class HFileLink extends FileLink {
 
     /**
      * Create an HFileLink relative path for the table/region/family/hfile location
-     * @param table Table name
+     *
+     * @param table  Table name
      * @param region Region Name
      * @param family Family Name
-     * @param hfile HFile Name
+     * @param hfile  HFile Name
      * @return the relative Path to open the specified table/region/family/hfile link
      */
     public static Path createPath(final TableName table, final String region,
@@ -147,11 +147,12 @@ public class HFileLink extends FileLink {
 
     /**
      * Create an HFileLink instance from table/region/family/hfile location
-     * @param conf {@link Configuration} from which to extract specific archive locations
-     * @param table Table name
+     *
+     * @param conf   {@link Configuration} from which to extract specific archive locations
+     * @param table  Table name
      * @param region Region Name
      * @param family Family Name
-     * @param hfile HFile Name
+     * @param hfile  HFile Name
      * @return Link to the file with the specified table/region/family/hfile location
      * @throws IOException on unexpected error.
      */
@@ -162,27 +163,12 @@ public class HFileLink extends FileLink {
     }
 
     /**
-     * @return the origin path of the hfile.
-     */
-    public Path getOriginPath() {
-        return this.originPath;
-    }
-
-    /**
-     * @return the path of the archived hfile.
-     */
-    public Path getArchivePath() {
-        return this.archivePath;
-    }
-
-    /**
      * @param path Path to check.
      * @return True if the path is a HFileLink.
      */
     public static boolean isHFileLink(final Path path) {
         return isHFileLink(path.getName());
     }
-
 
     /**
      * @param fileName File name to check.
@@ -197,7 +183,7 @@ public class HFileLink extends FileLink {
     /**
      * Convert a HFileLink path to a table relative path.
      * e.g. the link: /hbase/test/0123/cf/testtb=4567-abcd
-     *      becomes: /hbase/testtb/4567/cf/abcd
+     * becomes: /hbase/testtb/4567/cf/abcd
      *
      * @param path HFileLink path
      * @return Relative table path
@@ -266,7 +252,7 @@ public class HFileLink extends FileLink {
      * Create a new HFileLink name
      *
      * @param hfileRegionInfo - Linked HFile Region Info
-     * @param hfileName - Linked HFile name
+     * @param hfileName       - Linked HFile name
      * @return file name of the HFile Link
      */
     public static String createHFileLinkName(final HRegionInfo hfileRegionInfo,
@@ -278,9 +264,9 @@ public class HFileLink extends FileLink {
     /**
      * Create a new HFileLink name
      *
-     * @param tableName - Linked HFile table name
+     * @param tableName  - Linked HFile table name
      * @param regionName - Linked HFile region name
-     * @param hfileName - Linked HFile name
+     * @param hfileName  - Linked HFile name
      * @return file name of the HFile Link
      */
     public static String createHFileLinkName(final TableName tableName,
@@ -297,11 +283,11 @@ public class HFileLink extends FileLink {
      * <p>It also adds a back-reference to the hfile back-reference directory
      * to simplify the reference-count and the cleaning process.
      *
-     * @param conf {@link Configuration} to read for the archive directory name
-     * @param fs {@link FileSystem} on which to write the HFileLink
-     * @param dstFamilyPath - Destination path (table/region/cf/)
+     * @param conf            {@link Configuration} to read for the archive directory name
+     * @param fs              {@link FileSystem} on which to write the HFileLink
+     * @param dstFamilyPath   - Destination path (table/region/cf/)
      * @param hfileRegionInfo - Linked HFile Region Info
-     * @param hfileName - Linked HFile name
+     * @param hfileName       - Linked HFile name
      * @return true if the file is created, otherwise the file exists.
      * @throws IOException on file or parent directory creation failure
      */
@@ -319,12 +305,12 @@ public class HFileLink extends FileLink {
      * <p>It also adds a back-reference to the hfile back-reference directory
      * to simplify the reference-count and the cleaning process.
      *
-     * @param conf {@link Configuration} to read for the archive directory name
-     * @param fs {@link FileSystem} on which to write the HFileLink
+     * @param conf          {@link Configuration} to read for the archive directory name
+     * @param fs            {@link FileSystem} on which to write the HFileLink
      * @param dstFamilyPath - Destination path (table/region/cf/)
-     * @param linkedTable - Linked Table Name
-     * @param linkedRegion - Linked Region Name
-     * @param hfileName - Linked HFile name
+     * @param linkedTable   - Linked Table Name
+     * @param linkedRegion  - Linked Region Name
+     * @param hfileName     - Linked HFile name
      * @return true if the file is created, otherwise the file exists.
      * @throws IOException on file or parent directory creation failure
      */
@@ -368,8 +354,8 @@ public class HFileLink extends FileLink {
      * <p>It also adds a back-reference to the hfile back-reference directory
      * to simplify the reference-count and the cleaning process.
      *
-     * @param conf {@link Configuration} to read for the archive directory name
-     * @param fs {@link FileSystem} on which to write the HFileLink
+     * @param conf          {@link Configuration} to read for the archive directory name
+     * @param fs            {@link FileSystem} on which to write the HFileLink
      * @param dstFamilyPath - Destination path (table/region/cf/)
      * @param hfileLinkName - HFileLink name (it contains hfile-region-table)
      * @return true if the file is created, otherwise the file exists.
@@ -398,7 +384,7 @@ public class HFileLink extends FileLink {
     /**
      * Get the full path of the HFile referenced by the back reference
      *
-     * @param rootDir root hbase directory
+     * @param rootDir     root hbase directory
      * @param linkRefPath Link Back Reference path
      * @return full path of the referenced hfile
      * @throws IOException on unexpected error.
@@ -432,7 +418,7 @@ public class HFileLink extends FileLink {
     /**
      * Get the full path of the HFile referenced by the back reference
      *
-     * @param conf {@link Configuration} to read for the archive directory name
+     * @param conf        {@link Configuration} to read for the archive directory name
      * @param linkRefPath Link Back Reference path
      * @return full path of the referenced hfile
      * @throws IOException on unexpected error.
@@ -440,6 +426,20 @@ public class HFileLink extends FileLink {
     public static Path getHFileFromBackReference(final Configuration conf, final Path linkRefPath)
             throws IOException {
         return getHFileFromBackReference(FSUtils.getRootDir(conf), linkRefPath);
+    }
+
+    /**
+     * @return the origin path of the hfile.
+     */
+    public Path getOriginPath() {
+        return this.originPath;
+    }
+
+    /**
+     * @return the path of the archived hfile.
+     */
+    public Path getArchivePath() {
+        return this.archivePath;
     }
 
 }

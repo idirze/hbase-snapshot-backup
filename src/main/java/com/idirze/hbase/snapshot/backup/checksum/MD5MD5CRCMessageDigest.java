@@ -13,16 +13,13 @@ public class MD5MD5CRCMessageDigest extends MessageDigest {
 
     private final int bytesPerCrc;
     private final int crcsPerBlock;
-    private int crcCount;
-    private int bytesRead;
-
     private final byte[] crc = new byte[4];
     private final DataOutputBuffer blockChecksumBuffer;
-
-    private DataOutputBuffer md5DigestBuffer;
-
     private final DataChecksum checksum;
     private final MessageDigest md5Digest;
+    private int crcCount;
+    private int bytesRead;
+    private DataOutputBuffer md5DigestBuffer;
 
     public MD5MD5CRCMessageDigest(int bytesPerChecksum, int crcsPerBlock, DataChecksum.Type type) throws NoSuchAlgorithmException {
         super(ALGORITHM_NAME);
