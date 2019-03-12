@@ -72,14 +72,16 @@ public class BackupRestoreCommands extends Configured implements Tool {
                     }
 
                     if (backupOpts.getRollup() != -1) {
-                        HbaseBackupRestoreOperations operations = new HbaseBackupRestoreOperations();
+
                         RollupBackupOptions rollupOpts = new RollupBackupOptions();
                         rollupOpts.setBackupRooPath(backupOpts.getBackupRooPath());
                         rollupOpts.setCommand(BackupCommand.ROLLUP);
                         rollupOpts.setNbBackups(backupOpts.getRollup());
 
-                        operations.addOperation(new RollupBackup(getConf(), backupManifest, rollupOpts));
-                        exit = operations.execute();
+                        exit = new HbaseBackupRestoreOperations()
+                                .addOperation(new RollupBackup(getConf(), backupManifest, rollupOpts))
+                                .execute();
+
                         if (exit != 0) return exit;
                     }
 
@@ -88,8 +90,10 @@ public class BackupRestoreCommands extends Configured implements Tool {
 
             case RESTORE:
                 try (final Connection conn = ConnectionFactory.createConnection(getConf())) {
+
                     RestoreBackupOptions restoreOpts = parseArgs(new RestoreBackupOptions(), args);
-                    backupManifestPath = FileUtils.path(restoreOpts.getBackupRooPath(), BackupManifest.BACKUP_MANIFEST_NAME);
+                    backupManifestPath = FileUtils
+                            .path(restoreOpts.getBackupRooPath(), BackupManifest.BACKUP_MANIFEST_NAME);
 
 
                     Map<String, String> tables;
@@ -108,7 +112,6 @@ public class BackupRestoreCommands extends Configured implements Tool {
                         log.info("Restoring tables: {}", tables);
 
                     } else {
-                        clone = true;
                         tables = restoreOpts.getTableMapping();
                         log.info("Restoring to target tables: {}", tables);
                     }
@@ -120,9 +123,10 @@ public class BackupRestoreCommands extends Configured implements Tool {
                         operations
                                 .addOperation(new RestoreBackup(conn, getConf(), table.getKey(), restoreOpts.getBackupId(), restoreOpts))
                                 .addOperation(new DisableTable(conn, table.getValue()))
-                                .addOperation(new RestoreSnapshot(conn, table.getKey(), table.getValue(), restoreOpts.getBackupId(), clone))
+                                .addOperation(new RestoreSnapshot(conn, table.getKey(), table.getValue(), restoreOpts.getBackupId()))
                                 .addOperation(new EnableTable(conn, table.getValue()))
                                 .addOperation(new DeleteSnapshot(conn, table.getKey(), restoreOpts.getBackupId()));
+
                         exit = operations.execute();
                         if (exit != 0) return exit;
                     }
@@ -138,7 +142,6 @@ public class BackupRestoreCommands extends Configured implements Tool {
                         .execute();
 
             case ROLLUP:
-                HbaseBackupRestoreOperations rollup = new HbaseBackupRestoreOperations();
                 RollupBackupOptions rollupBackupOpts = parseArgs(new RollupBackupOptions(), args);
                 backupManifestPath = FileUtils.path(rollupBackupOpts.getBackupRooPath(), BackupManifest.BACKUP_MANIFEST_NAME);
                 backupManifest = BackupManifests

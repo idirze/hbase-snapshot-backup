@@ -13,21 +13,19 @@ public class RestoreSnapshot extends Configured implements BackupRestoreOperatio
     private String srcTable;
     private String targetTable;
     private Connection connection;
-    private boolean clone;
 
-    public RestoreSnapshot(Connection connection, String srcTable, String targetTable, String backupId, boolean clone) {
+    public RestoreSnapshot(Connection connection, String srcTable, String targetTable, String backupId) {
         this.connection = connection;
         this.tableSnapshotId = SnapshotBackupUtils.tableSnapshotId(backupId, srcTable);
         this.srcTable = srcTable;
         this.targetTable = targetTable;
-        this.clone = clone;
     }
 
     @Override
     public void execute() throws Exception {
         log.info("Restore snapshot: {}, for table: {} into target table {}", tableSnapshotId, srcTable, targetTable);
         SnapshotBackupUtils.createNamespaceIfNotExistsForTable(connection, targetTable);
-        if (!srcTable.equals(targetTable) && clone) {
+        if (!srcTable.equals(targetTable)) {
             SnapshotBackupUtils.cloneSnapshot(connection, tableSnapshotId, targetTable);
         } else {
             log.info("Restoring the snapshot {} into the source table {}", tableSnapshotId, srcTable);

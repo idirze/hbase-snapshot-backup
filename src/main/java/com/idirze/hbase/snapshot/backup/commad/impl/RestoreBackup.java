@@ -12,6 +12,8 @@ import org.apache.hadoop.hbase.util.FSUtils;
 
 import java.net.URI;
 
+import static com.idirze.hbase.snapshot.backup.utils.SnapshotBackupUtils.tableSnapshotId;
+
 @Slf4j
 public class RestoreBackup extends Configured implements BackupRestoreOperation {
 
@@ -23,7 +25,7 @@ public class RestoreBackup extends Configured implements BackupRestoreOperation 
     public RestoreBackup(Connection connection, Configuration conf, String tableName, String backupId, RestoreBackupOptions options) {
         super(conf);
         this.options = options;
-        this.backupTableId = SnapshotBackupUtils.tableSnapshotId(backupId, tableName);
+        this.backupTableId = tableSnapshotId(backupId, tableName);
         this.table = tableName;
         this.connection = connection;
 
