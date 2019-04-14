@@ -3,10 +3,10 @@ package com.idirze.hbase.snapshot.backup.manifest;
 import com.idirze.hbase.snapshot.backup.commad.BackupCommand;
 import com.idirze.hbase.snapshot.backup.commad.BackupStatus;
 import lombok.Getter;
-import org.joda.time.DateTime;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
 
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -15,7 +15,7 @@ import java.util.Set;
 public class BackupManifest {
 
     public static final String BACKUP_MANIFEST_NAME = "its_backup.manifest";
-    public static DateTimeFormatter pattern = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss.SSZZ");
+    public static DateTimeFormatter pattern = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
 
     private String backupId;
     private String date;
@@ -30,8 +30,8 @@ public class BackupManifest {
     }
 
 
-    public BackupManifest withDate(DateTime date) {
-        this.date = date.toString(pattern);
+    public BackupManifest withDate(Instant date) {
+        this.date = date.toString();
         return this;
     }
 

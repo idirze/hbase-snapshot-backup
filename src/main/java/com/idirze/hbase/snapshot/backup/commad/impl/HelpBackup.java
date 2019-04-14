@@ -20,9 +20,4 @@ public class HelpBackup extends Configured implements BackupRestoreOperation {
 
         cli.usage(System.out);
     }
-
-    @Override
-    public void rollback() {
-
-    }
 }

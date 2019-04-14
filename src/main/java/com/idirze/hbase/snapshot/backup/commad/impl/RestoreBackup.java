@@ -56,9 +56,4 @@ public class RestoreBackup extends Configured implements BackupRestoreOperation 
         exportSnapshot.execute(options);
     }
 
-    @Override
-    public void rollback() {
-
-    }
-
 }

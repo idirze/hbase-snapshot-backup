@@ -26,9 +26,4 @@ public class HistoryBackup extends Configured implements BackupRestoreOperation 
                 .readFrom(getConf(), backupManifestPath)
                 .showHistory(options.getN());
     }
-
-    @Override
-    public void rollback() {
-
-    }
 }

@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package com.idirze.hbase.snapshot.backup.hbase;
+package com.idirze.hbase.snapshot.backup.admin;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;

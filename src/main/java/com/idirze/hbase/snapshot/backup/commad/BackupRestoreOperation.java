@@ -4,5 +4,7 @@ public interface BackupRestoreOperation {
 
     void execute() throws Exception;
 
-    void rollback() throws Exception;
+    default void rollback() throws Exception {
+
+    }
 }

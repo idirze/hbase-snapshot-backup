@@ -28,7 +28,7 @@ public class BackupManifests {
     @Getter
     private Set<BackupManifest> manifests = new TreeSet<>(new SortByDate());
 
-    public static BackupManifests readFrom(Configuration conf, String path) throws IOException {
+    public synchronized static BackupManifests readFrom(Configuration conf, String path) throws IOException {
         setPath(conf, path);
         String json;
         FSDataInputStream inputStream = null;
@@ -59,7 +59,7 @@ public class BackupManifests {
         manifestPath = path;
     }
 
-    public BackupManifests add(BackupManifest manifest) {
+    public synchronized BackupManifests add(BackupManifest manifest) {
         manifests.add(manifest);
         return this;
     }
@@ -71,7 +71,7 @@ public class BackupManifests {
                 .findFirst();
     }
 
-    public void writeTo(Configuration conf, String path) throws IOException {
+    public synchronized void writeTo(Configuration conf, String path) throws IOException {
 
         FSDataOutputStream outputStream = null;
         FileSystem fs = null;
@@ -100,7 +100,7 @@ public class BackupManifests {
 
     }
 
-    public void write() throws IOException {
+    public synchronized void write() throws IOException {
         writeTo(configuration, manifestPath);
     }
 

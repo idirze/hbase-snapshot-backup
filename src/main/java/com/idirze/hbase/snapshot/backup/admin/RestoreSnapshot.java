@@ -1,4 +1,4 @@
-package com.idirze.hbase.snapshot.backup.hbase;
+package com.idirze.hbase.snapshot.backup.admin;
 
 import com.idirze.hbase.snapshot.backup.commad.BackupRestoreOperation;
 import com.idirze.hbase.snapshot.backup.utils.SnapshotBackupUtils;

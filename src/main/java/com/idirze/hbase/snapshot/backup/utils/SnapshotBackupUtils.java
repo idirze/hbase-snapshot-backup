@@ -1,7 +1,8 @@
 package com.idirze.hbase.snapshot.backup.utils;
 
-import com.idirze.hbase.snapshot.backup.hbase.HFileLink;
-import com.idirze.hbase.snapshot.backup.hbase.WALLink;
+import com.idirze.hbase.snapshot.backup.admin.HFileLink;
+import com.idirze.hbase.snapshot.backup.admin.WALLink;
+import com.idirze.hbase.snapshot.backup.commad.BackupId;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -20,15 +21,21 @@ import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Triple;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
 public class SnapshotBackupUtils {
 
     private final static long TABLE_AVAILABILITY_WAIT_TIME = 180000;
+    public static final String BACKUPID_PREFIX = "its_backup_";
+    private static Pattern p = Pattern.compile("(" + BACKUPID_PREFIX + ")(\\d+)(.*)");
 
     public static String tableSnapshotId(String backupId, String tableName) {
 
@@ -107,7 +114,11 @@ public class SnapshotBackupUtils {
             if (snapshotType != null) {
                 type = HBaseProtos.SnapshotDescription.Type.valueOf(snapshotType.toUpperCase());
             }
-            admin.snapshot(snapshotName, TableName.valueOf(tableName), type);
+            if (!isSnapshotExists(connection, snapshotName)) {
+                admin.snapshot(snapshotName, TableName.valueOf(tableName), type);
+            } else {
+                log.info("The snapshot {} already exists", snapshotName);
+            }
         }
     }
 
@@ -238,5 +249,44 @@ public class SnapshotBackupUtils {
                 admin.createNamespace(ns);
             }
         }
+    }
+
+    public static boolean isSnapshotExists(Connection connection, final String snapshotId) throws IOException {
+        try (Admin admin = connection.getAdmin()) {
+            List<HBaseProtos.SnapshotDescription> list = admin.listSnapshots(snapshotId);
+            if (list != null && !list.isEmpty()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static BackupId getOrCreateBackupId(Connection connection) throws IOException {
+        try (Admin admin = connection.getAdmin()) {
+            List<HBaseProtos.SnapshotDescription> list = admin.listSnapshots(BACKUPID_PREFIX + ".*");
+
+            BackupId backupId = list
+                    .stream()
+                    .map(s -> new BackupId(extractBackupId(s.getName()), false))
+                    .max(Comparator.comparing(x -> x.getId()))
+                    .orElse(new BackupId(BACKUPID_PREFIX + EnvironmentEdgeManager.currentTime(), true));
+
+            log.info("Backup Id: {}", backupId);
+
+            return backupId;
+        }
+    }
+
+    private static String extractBackupId(String bkid) {
+        Matcher m = p.matcher(bkid);
+        m.find();
+        return m.group(1) + m.group(2);
+    }
+
+    public static Instant getTimestamp(String bkid) {
+        Matcher m = p.matcher(bkid);
+        m.find();
+        return Instant.ofEpochMilli(Long.valueOf(m.group(2)));
     }
 }

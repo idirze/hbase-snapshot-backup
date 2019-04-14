@@ -5,17 +5,16 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
-public class HbaseBackupRestoreOperations {
+public class HbaseBackupRestoreTable {
 
     private List<BackupRestoreOperation> commands = new ArrayList<>();
 
-    public HbaseBackupRestoreOperations() {
-    }
-
-
     public int execute() {
+
         for (int i = 0; i < commands.size(); i++) {
             BackupRestoreOperation cmd = commands.get(i);
             try {
@@ -36,8 +35,10 @@ public class HbaseBackupRestoreOperations {
         return 0;
     }
 
-    public HbaseBackupRestoreOperations addOperation(BackupRestoreOperation command) {
+    public HbaseBackupRestoreTable addOperation(BackupRestoreOperation command) {
         this.commands.add(command);
         return this;
     }
+
+
 }
